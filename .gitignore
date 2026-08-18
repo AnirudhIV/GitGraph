@@ -1,0 +1,25 @@
+# Secrets
+.env
+backend/.env
+frontend/.env
+
+# Python
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Seed script scratch clones
+backend/.repo-cache/
