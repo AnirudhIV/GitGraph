@@ -1,4 +1,4 @@
-# Repo Intelligence Graph
+# GitGraph
 
 Explore a codebase's **hidden coupling, hotspots, and ownership** — not from its
 file tree, but from its real git history, modeled as a graph in CognoDB.
@@ -143,13 +143,14 @@ Seed the graph from a real repository's history (defaults to
 `pallets/flask` if no `--repo-url`/`--repo-path` is given):
 
 ```bash
-python -m seed.load --repo-url https://github.com/pallets/flask.git --max-commits 1500 --clear
+python -m seed.load --repo-url https://github.com/pallets/flask.git --max-commits 5000 --clear
 ```
 
 `--repo-path` points at an existing local clone instead of cloning fresh.
 `--max-commits` caps how much history to import (the free tier is sized for
-a few thousand to a few hundred thousand nodes/relationships — 1000–2000
-commits on a mid-size repo comfortably fits).
+a few thousand to a few hundred thousand nodes/relationships — 5000 commits
+on a mid-size repo comfortably fits, but a very active repo with many files
+touched per commit can climb faster; lower it if you hit tier limits).
 
 Start the API:
 

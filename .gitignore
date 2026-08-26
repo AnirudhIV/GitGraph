@@ -23,3 +23,9 @@ Thumbs.db
 
 # Seed script scratch clones
 backend/.repo-cache/
+
+# Third-party Claude Code skills installed via `npx skills add` -- personal
+# tooling, not project code.
+.claude/skills/
+.agents/
+skills-lock.json

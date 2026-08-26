@@ -1,11 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import db
+from app import db, ratelimit
 from app.config import get_settings
 from app.routers import authors, files, modules, repo, search
 
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     db.close_driver()
 
 
-app = FastAPI(title="Repo Intelligence Graph API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="GitGraph API", version="1.0.0", lifespan=lifespan)
 
 settings = get_settings()
 app.add_middleware(
@@ -35,6 +35,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# General per-IP ceiling on read traffic, separate from the tighter,
+# ingest-specific limits in app.routers.repo -- mainly to stop scripted
+# flooding of /api/hotspots now that its query can take several seconds on
+# a repo of any real size (see app.queries.HOTSPOTS_SIMPLE/ROLLUP).
+READ_RATE_LIMIT = 120
+READ_RATE_WINDOW_SECONDS = 60
+
+
+@app.middleware("http")
+async def read_rate_limit(request: Request, call_next):
+    if request.method == "GET" and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        try:
+            ratelimit.enforce(
+                f"read:{ratelimit.client_ip(request)}",
+                max_hits=READ_RATE_LIMIT,
+                window_seconds=READ_RATE_WINDOW_SECONDS,
+            )
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+    return await call_next(request)
 
 
 @app.exception_handler(db.DatabaseUnavailableError)

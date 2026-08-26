@@ -23,14 +23,23 @@ def list_modules():
 
 @router.get("/modules/coupling", response_model=list[ModuleCouplingOut])
 def module_coupling(
-    min_count: int = Query(2, ge=1),
+    min_count: int = Query(queries.MODULE_COUPLING_DEFAULT_MIN_COUNT, ge=1),
     limit: int = Query(25, ge=1, le=200),
-    max_files_per_commit: int = Query(10, ge=1),
+    max_files_per_commit: int = Query(queries.MODULE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT, ge=1),
 ):
-    rows = run_query(
-        queries.MODULE_COUPLING,
-        {"min_count": min_count, "limit": limit, "max_files_per_commit": max_files_per_commit},
-    )
+    # Default params (the only ones the frontend ever sends) read the
+    # COUPLED_WITH edges precomputed at ingest time -- see the note above
+    # PRECOMPUTE_MODULE_COUPLING in app.queries. Non-default params fall
+    # back to a live computation.
+    if min_count == queries.MODULE_COUPLING_DEFAULT_MIN_COUNT and max_files_per_commit == (
+        queries.MODULE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT
+    ):
+        rows = run_query(queries.MODULE_COUPLING_PRECOMPUTED, {"limit": limit})
+    else:
+        rows = run_query(
+            queries.MODULE_COUPLING,
+            {"min_count": min_count, "limit": limit, "max_files_per_commit": max_files_per_commit},
+        )
     return [
         ModuleCouplingOut(module_a=r["module_a"], module_b=r["module_b"], shared_commits=r["shared_commits"])
         for r in rows

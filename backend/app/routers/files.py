@@ -16,7 +16,7 @@ from app.schemas import (
 router = APIRouter()
 
 # Commits touching more files than this are excluded from coupling
-# calculations -- see the note above app.queries.HOTSPOTS.
+# calculations -- see the note above app.queries.HOTSPOTS_SIMPLE.
 DEFAULT_MAX_FILES_PER_COMMIT = 10
 
 
@@ -133,6 +133,7 @@ def get_file(path: str, recent_limit: int = 15, owner_limit: int = 10, co_change
         extension=row["extension"] or "",
         module=row["module"] or "",
         is_deleted=row["is_deleted"],
+        renamed_to=row.get("renamed_to"),
         commit_count=row["commit_count"],
         first_commit_at=row["first_ts"],
         last_commit_at=row["last_ts"],

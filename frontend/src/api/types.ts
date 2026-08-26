@@ -52,6 +52,7 @@ export interface FileDetail {
   extension: string;
   module: string;
   is_deleted: boolean;
+  renamed_to: string | null;
   commit_count: number;
   first_commit_at: string | null;
   last_commit_at: string | null;

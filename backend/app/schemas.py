@@ -60,6 +60,7 @@ class FileDetailOut(BaseModel):
     extension: str
     module: str
     is_deleted: bool
+    renamed_to: str | None
     commit_count: int
     first_commit_at: str | None
     last_commit_at: str | None

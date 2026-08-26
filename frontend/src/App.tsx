@@ -8,6 +8,7 @@ import { FileDetail } from "./pages/FileDetail";
 import { Files } from "./pages/Files";
 import { Modules } from "./pages/Modules";
 import { Search } from "./pages/Search";
+import { TrackRepo } from "./pages/TrackRepo";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/modules" element={<Modules />} />
           <Route path="/collaboration" element={<Collaboration />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/track" element={<TrackRepo />} />
         </Routes>
       </div>
     </div>

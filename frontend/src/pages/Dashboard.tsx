@@ -5,6 +5,8 @@ import { ModuleChip } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { StatTile } from "../components/StatTile";
 import { useApi } from "../hooks/useApi";
+import { riskColorVar, riskTier } from "../lib/riskColor";
+import { Landing } from "./Landing";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -18,6 +20,15 @@ function formatDate(iso: string | null): string {
 export function Dashboard() {
   const stats = useApi(useCallback(() => api.stats(), []));
   const hotspots = useApi(useCallback(() => api.hotspots(12), []));
+
+  function onTracked() {
+    stats.reload();
+    hotspots.reload();
+  }
+
+  if (stats.data && stats.data.file_count === 0) {
+    return <Landing onTracked={onTracked} />;
+  }
 
   return (
     <div>
@@ -64,24 +75,59 @@ export function Dashboard() {
             <EmptyState title="No hotspots yet" subtitle="Run the seed script to load a repository's history." />
           )}
           {hotspots.data && hotspots.data.length > 0 && (
-            <div className="stack" style={{ gap: 10 }}>
-              {hotspots.data.map((h) => (
-                <Link key={h.path} to={fileHref(h.path)} className="link-row" style={{ padding: "10px 0" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="row-primary">{h.path}</div>
-                    <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
-                      <ModuleChip name={h.module} />
-                      <span className="row-secondary">
-                        {h.commit_count} commits · {h.coupled_file_count} coupled files · {h.author_count} author
-                        {h.author_count === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600, color: "var(--status-serious)" }}>
-                    {h.risk_score.toFixed(2)}
-                  </div>
-                </Link>
-              ))}
+            <div className="stack" style={{ gap: 8 }}>
+              {(() => {
+                const maxScore = Math.max(...hotspots.data.map((h) => h.risk_score));
+                return hotspots.data.map((h) => {
+                  const tier = riskTier(h.risk_score, maxScore);
+                  const color = riskColorVar(tier);
+                  return (
+                    <Link
+                      key={h.path}
+                      to={fileHref(h.path)}
+                      className="link-row"
+                      style={{ borderLeft: `3px solid ${color}`, paddingLeft: 12 }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div className="row-primary">{h.path}</div>
+                        <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
+                          <ModuleChip name={h.module} />
+                          <span className="row-secondary">
+                            {h.commit_count} commits · {h.coupled_file_count} coupled files · {h.author_count} author
+                            {h.author_count === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flex: "none" }}>
+                        <div
+                          style={{
+                            fontVariantNumeric: "tabular-nums",
+                            fontSize: 24,
+                            fontWeight: 700,
+                            lineHeight: 1,
+                            letterSpacing: "-0.01em",
+                            color,
+                          }}
+                        >
+                          {h.risk_score.toFixed(2)}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            color: "var(--text-muted)",
+                            marginTop: 3,
+                          }}
+                        >
+                          risk score
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                });
+              })()}
             </div>
           )}
         </section>

@@ -15,7 +15,15 @@ router = APIRouter()
 
 @router.get("/authors", response_model=list[AuthorSummaryOut])
 def list_authors(search: str = Query(""), limit: int = Query(30, ge=1, le=200), offset: int = 0):
-    rows = run_query(queries.AUTHOR_LIST, {"search": search, "limit": limit, "offset": offset})
+    # No search term (the only case on first page load) reads precomputed
+    # stats directly -- no aggregation at request time. An actual search
+    # term can't be precomputed (arbitrary input), so it falls back to
+    # AUTHOR_LIST, which filters by name before aggregating rather than
+    # after -- see the note above PRECOMPUTE_AUTHOR_STATS in app.queries.
+    if search == "":
+        rows = run_query(queries.AUTHOR_LIST_PRECOMPUTED, {"limit": limit, "offset": offset})
+    else:
+        rows = run_query(queries.AUTHOR_LIST, {"search": search, "limit": limit, "offset": offset})
     return [
         AuthorSummaryOut(
             email=r["email"],

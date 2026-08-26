@@ -39,7 +39,7 @@ export function Nav() {
       }}
     >
       <div>
-        <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>Repo Intelligence</div>
+        <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>GitGraph</div>
         <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>graph over real git history</div>
       </div>
 
@@ -51,6 +51,19 @@ export function Nav() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </form>
+
+      <NavLink
+        to="/track"
+        className="btn"
+        style={({ isActive }) => ({
+          textAlign: "center",
+          textDecoration: "none",
+          borderColor: isActive ? "var(--cat-1)" : undefined,
+          color: isActive ? "var(--cat-1)" : undefined,
+        })}
+      >
+        + Track a repo
+      </NavLink>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {LINKS.map((l) => (

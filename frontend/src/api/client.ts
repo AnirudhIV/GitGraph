@@ -53,9 +53,49 @@ async function request<T>(path: string, params?: Record<string, string | number 
   return res.json() as Promise<T>;
 }
 
+export interface IngestJob {
+  job_id: string;
+  status: "running" | "done" | "error";
+  message: string;
+  repo_url: string;
+  error: string | null;
+  stats: RepoStats | null;
+  elapsed_seconds: number | null;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(BASE_URL + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError("Could not reach the API server. Is the backend running?", 0);
+  }
+
+  if (!res.ok) {
+    let detail = `Request failed with status ${res.status}`;
+    try {
+      const json = await res.json();
+      if (typeof json?.detail === "string") detail = json.detail;
+      else if (Array.isArray(json?.detail) && json.detail[0]?.msg) detail = json.detail[0].msg;
+    } catch {
+      // ignore
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   health: () => request<{ status: string; database_connected: boolean }>("/api/health"),
   stats: () => request<RepoStats>("/api/stats"),
+
+  startIngest: (repoUrl: string, maxCommits = 5000) =>
+    post<{ job_id: string }>("/api/repo/ingest", { repo_url: repoUrl, max_commits: maxCommits }),
+  ingestStatus: (jobId: string) => request<IngestJob>(`/api/repo/ingest/${jobId}`),
   hotspots: (limit = 20) => request<Hotspot[]>("/api/hotspots", { limit }),
 
   files: (search = "", limit = 50) => request<FileSummary[]>("/api/files", { search, limit }),

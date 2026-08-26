@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { api, fileHref } from "../api/client";
 import { BarList } from "../components/BarList";
 import { CommitList } from "../components/CommitList";
@@ -28,10 +28,19 @@ export function FileDetail() {
         {detail.data && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
             <ModuleChip name={detail.data.module} />
-            {detail.data.is_deleted && (
-              <span className="badge" style={{ color: "var(--status-critical)" }}>
-                deleted from HEAD
+            {detail.data.renamed_to ? (
+              <span className="badge" style={{ color: "var(--status-warning)" }}>
+                renamed to{" "}
+                <Link to={fileHref(detail.data.renamed_to)} className="mono">
+                  {detail.data.renamed_to}
+                </Link>
               </span>
+            ) : (
+              detail.data.is_deleted && (
+                <span className="badge" style={{ color: "var(--status-critical)" }}>
+                  deleted from HEAD
+                </span>
+              )
             )}
           </div>
         )}
