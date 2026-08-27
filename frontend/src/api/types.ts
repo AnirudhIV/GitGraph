@@ -103,6 +103,20 @@ export interface AuthorDetail extends AuthorSummary {
   top_modules: { name: string; touches: number }[];
 }
 
+export interface SuccessionFile {
+  path: string;
+  module: string;
+  commit_count: number;
+  last_touched: string | null;
+}
+
+export interface AuthorNetwork {
+  root: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  at_risk_files: SuccessionFile[];
+}
+
 export interface CollabPathStep {
   kind: string;
   id: string;

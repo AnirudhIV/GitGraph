@@ -335,7 +335,8 @@ select {
   color: var(--text-primary);
 }
 
-button.btn {
+.btn {
+  display: inline-block;
   font-size: 13px;
   font-weight: 600;
   padding: 8px 14px;
@@ -347,11 +348,11 @@ button.btn {
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
-button.btn:hover {
+.btn:hover {
   border-color: var(--cat-1);
 }
 
-button.btn-primary {
+.btn-primary {
   background: var(--cat-1);
   border-color: var(--cat-1);
   color: white;

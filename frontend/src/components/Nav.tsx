@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 
 const LINKS = [
-  { to: "/", label: "Dashboard", end: true },
+  { to: "/dashboard", label: "Dashboard", end: true },
   { to: "/files", label: "Files" },
   { to: "/authors", label: "Authors" },
   { to: "/modules", label: "Modules" },
@@ -38,10 +38,10 @@ export function Nav() {
         height: "100vh",
       }}
     >
-      <div>
+      <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
         <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>GitGraph</div>
         <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>graph over real git history</div>
-      </div>
+      </Link>
 
       <form onSubmit={onSubmit}>
         <input

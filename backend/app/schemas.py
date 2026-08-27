@@ -111,6 +111,20 @@ class AuthorDetailOut(AuthorSummaryOut):
     top_modules: list[dict]
 
 
+class SuccessionFileOut(BaseModel):
+    path: str
+    module: str
+    commit_count: int
+    last_touched: str | None
+
+
+class AuthorNetworkOut(BaseModel):
+    root: str
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    at_risk_files: list[SuccessionFileOut]
+
+
 class CollabPathStepOut(BaseModel):
     kind: str  # Author | File
     id: str

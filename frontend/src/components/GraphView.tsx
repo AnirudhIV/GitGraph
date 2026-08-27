@@ -9,7 +9,7 @@ import {
 } from "d3-force";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { fileHref } from "../api/client";
+import { authorHref, fileHref } from "../api/client";
 import type { GraphEdge as ApiEdge, GraphNode as ApiNode } from "../api/types";
 
 interface SimNode extends SimulationNodeDatum, ApiNode {}
@@ -162,7 +162,7 @@ export function GraphView({ nodes, edges, height = 420 }: { nodes: ApiNode[]; ed
               onPointerDown={(e) => onNodePointerDown(e, n.id)}
               onClick={(e) => {
                 e.stopPropagation();
-                if (n.hop !== 0) navigate(fileHref(n.id));
+                if (n.hop !== 0) navigate(n.kind === "Author" ? authorHref(n.id) : fileHref(n.id));
               }}
               style={{ cursor: n.hop === 0 ? "default" : "pointer" }}
             >

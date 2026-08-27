@@ -10,7 +10,7 @@ export function TrackRepo() {
         Tracking a new repository replaces the graph currently loaded — existing files, authors and commits will be
         gone.
       </div>
-      <Landing onTracked={() => navigate("/")} />
+      <Landing onTracked={() => navigate("/dashboard")} />
     </div>
   );
 }

@@ -6,7 +6,6 @@ import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { StatTile } from "../components/StatTile";
 import { useApi } from "../hooks/useApi";
 import { riskColorVar, riskTier } from "../lib/riskColor";
-import { Landing } from "./Landing";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -20,15 +19,6 @@ function formatDate(iso: string | null): string {
 export function Dashboard() {
   const stats = useApi(useCallback(() => api.stats(), []));
   const hotspots = useApi(useCallback(() => api.hotspots(12), []));
-
-  function onTracked() {
-    stats.reload();
-    hotspots.reload();
-  }
-
-  if (stats.data && stats.data.file_count === 0) {
-    return <Landing onTracked={onTracked} />;
-  }
 
   return (
     <div>

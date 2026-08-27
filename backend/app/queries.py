@@ -504,6 +504,56 @@ RETURN a1.email AS a1_email, a1.name AS a1_name, f1.path AS file_path_1,
 LIMIT 1
 """
 
+# Author collaboration network: everyone who has ever touched a file this
+# author has also touched, weighted by how many files they share. Anchored
+# on $email the same way AUTHOR_DIRECT_CONNECTION is (see the note above
+# it), but that alone wasn't enough on a prolific author (800+ commits,
+# 400+ files): fanning the second hop out over *every* file they've ever
+# touched -- including high-traffic files like README that dozens of
+# drive-by contributors have also brushed against -- measured at 8s+. The
+# `WITH ... ORDER BY ... LIMIT` before the second MATCH caps the fan-out
+# source to the author's own top files by their commit count on each one,
+# which both bounds the cost and better reflects real collaboration (a
+# shared one-line README touch is weak signal; files someone actually
+# worked on repeatedly are strong signal).
+AUTHOR_NETWORK = """
+MATCH (a:Author {email: $email})-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(f:File {is_deleted: false})
+WITH f, count(DISTINCT c) AS my_commits
+ORDER BY my_commits DESC
+LIMIT $max_anchor_files
+MATCH (f)<-[:MODIFIED]-(:Commit)<-[:AUTHORED]-(other:Author)
+WHERE other.email <> $email
+WITH other, count(DISTINCT f) AS shared_files
+WHERE shared_files >= $min_shared
+RETURN other.email AS email, other.name AS name, shared_files
+ORDER BY shared_files DESC
+LIMIT $limit
+"""
+
+# Files where this author is the *only* person who has ever committed to
+# them -- true bus-factor-1 files, i.e. what's actually at risk if they
+# leave. `c` in the first MATCH ranges over the author's own commits on f,
+# so commit_count is their commit count on it and max(c.timestamp) is when
+# they last touched it; the second MATCH re-walks every commit that ever
+# touched f (not just this author's) to count distinct owners, so
+# author_count = 1 can only mean $email is that one owner.
+#
+# last_touched matters as much as sole ownership: a file this author
+# committed to yesterday and one they haven't touched in three years are
+# both "bus-factor-1", but the stale one is the bigger risk -- nobody else
+# has ever needed to learn it, and by now even the sole owner's own memory
+# of it has likely faded.
+AUTHOR_SOLE_OWNED_FILES = """
+MATCH (a:Author {email: $email})-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(f:File {is_deleted: false})
+WITH f, count(DISTINCT c) AS commit_count, max(c.timestamp) AS last_touched
+MATCH (f)<-[:MODIFIED]-(:Commit)<-[:AUTHORED]-(owner:Author)
+WITH f, commit_count, last_touched, count(DISTINCT owner) AS author_count
+WHERE author_count = 1
+RETURN f.path AS path, f.module AS module, commit_count, last_touched
+ORDER BY commit_count DESC
+LIMIT $limit
+"""
+
 # ---------------------------------------------------------------------------
 # Read: modules
 # ---------------------------------------------------------------------------
