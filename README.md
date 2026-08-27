@@ -6,7 +6,8 @@ file tree, but from its real git history, modeled as a graph in CognoDB.
 Point it at any public git repository, mine the commit log, and ask questions
 no relational schema answers comfortably: *"If I touch this file, what else
 tends to break?" "Who actually owns this module?" "How do these two
-contributors connect through the code they've both touched?"*
+contributors connect through the code they've both touched?" "Who's the
+single point of failure on this team if they leave?"*
 
 ## Why a graph database?
 
@@ -49,6 +50,9 @@ coupling/hotspot/ownership analysis this app is built around.)
 ## Screenshots
 
 All captured against a real seed: [pallets/flask](https://github.com/pallets/flask)'s last 1,500 commits (421 files, 378 authors, 12 modules).
+
+**Landing page** — `/` is a marketing page (the app itself now lives at `/dashboard`), with a static illustration of what the real, interactive graph view looks like:
+![Landing page](docs/screenshots/landing-page.png)
 
 **Dashboard** — repo-wide stats and hotspot ranking (churn × coupling fan-out ÷ bus factor):
 ![Dashboard](docs/screenshots/dashboard.png)
@@ -112,9 +116,18 @@ backend/
 frontend/
   src/
     api/            Typed fetch client
-    components/      GraphView (custom d3-force blast-radius viz), BarList, Nav, ...
-    pages/          Dashboard, Files, FileDetail, Authors, AuthorDetail, Modules, Collaboration, Search
+    components/      GraphView (custom d3-force graph, used for blast radius and
+                      author collaboration networks), BarList, Nav, ...
+    pages/          Home (marketing page, at "/"), Dashboard (the app itself,
+                      at "/dashboard"), Files, FileDetail, Authors,
+                      AuthorDetail, Modules, Collaboration, Search, TrackRepo,
+                      Landing (the repo-tracking form)
 ```
+
+`/` is the marketing `Home` page; the app (stats, hotspots, etc.) lives at
+`/dashboard`. `Landing` is the repo-tracking form: `TrackRepo` renders it
+directly at `/track`, and it's also shown in place of any app page when no
+repo has been tracked yet, so there's nothing to navigate to.
 
 ## Setting up CognoDB Cloud
 
@@ -269,6 +282,15 @@ care about) often gives you a cheaper equivalent.
 - **Seed data is real**, not synthetic — `seed/mine_git.py` shells out to the
   actual `git` CLI and parses `--numstat` output; nothing about the graph's
   content is generated.
+- **Identity, not aliases**: `mine_git.py` reads `%aN`/`%aE` (mailmap-resolved
+  name/email), not `%an`/`%ae` (raw). If the repo ships a `.mailmap`, a
+  contributor who committed under several names/emails collapses onto one
+  `Author` node instead of being split across aliases and undercounted on
+  every ownership and bus-factor metric.
+- **History survives renames**: file moves/renames are tracked as
+  `RENAMED_TO` edges (`load_renames_batch`), so coupling, ownership and
+  hotspot queries can roll a file's pre-rename history forward into its
+  current path instead of the trail going cold at the rename.
 - **Indexes**: uniqueness constraints on `Author.email`, `Commit.hash`,
   `File.path`, `Module.name` double as lookup indexes, created idempotently
   by the seed script (`CREATE CONSTRAINT ... IF NOT EXISTS`).
@@ -292,6 +314,28 @@ care about) often gives you a cheaper equivalent.
   batch a given commit's file list has no repeated paths and a given commit
   hash appears once — so the pair each relationship connects never repeats
   within a single statement.
+- **Precomputed analytics**: hotspot risk scores, author commit/file counts,
+  and module coupling are computed once at ingest time
+  (`seed/load.py::precompute_hotspots` / `precompute_author_stats` /
+  `precompute_module_coupling`) and written directly onto graph properties
+  and `COUPLED_WITH` edges, rather than re-aggregated on every request. The
+  read endpoints (`/hotspots`, `/authors` with no search term,
+  `/modules/coupling` at default params) hit those precomputed values
+  first; the original live Cypher stays as a fallback for non-default query
+  parameters, which can't be precomputed ahead of time.
+- **Rate limiting** (`app/ratelimit.py`, in-memory sliding window): reads are
+  capped per IP (120/min) across `/api/*`, and repo ingest — the expensive,
+  clone-a-git-repo path — gets its own tighter limits: a 45s global cooldown
+  between ingests plus a 5/hour cap per IP, so a public instance can't be
+  turned into a repo-cloning denial-of-service vector.
+- **Succession risk is recency-weighted**: an author's "at risk if they
+  leave" list (`AUTHOR_SOLE_OWNED_FILES` — files only they have ever
+  committed to, true bus-factor-1) also returns `last_touched`. A file the
+  sole owner committed to yesterday and one they haven't touched in three
+  years both count as bus-factor-1, but the stale one is the bigger risk —
+  nobody else ever needed to learn it, and by now even the owner's own
+  memory of it has likely faded. Shown per-file on the author page rather
+  than folded into a single score, so it stays legible.
 
 ## Deployment
 
