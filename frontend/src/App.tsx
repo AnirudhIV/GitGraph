@@ -12,6 +12,7 @@ import { Files } from "./pages/Files";
 import { Home } from "./pages/Home";
 import { Landing } from "./pages/Landing";
 import { Modules } from "./pages/Modules";
+import { RepoMap } from "./pages/RepoMap";
 import { Search } from "./pages/Search";
 import { TrackRepo } from "./pages/TrackRepo";
 
@@ -42,6 +43,7 @@ export default function App() {
       <Route path="/" element={<Home />} />
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/repo-map" element={<RepoMap />} />
         <Route path="/files" element={<Files />} />
         <Route path="/files/*" element={<FileDetail />} />
         <Route path="/authors" element={<Authors />} />

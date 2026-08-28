@@ -662,6 +662,39 @@ LIMIT $limit
 """
 
 # ---------------------------------------------------------------------------
+# Repo map: whole-repo overview (app.routers.repo.get_repo_map)
+# ---------------------------------------------------------------------------
+
+# Deliberately bounded, unlike every other graph endpoint here which is
+# anchored on one file/author: this is the one *unanchored* view of the
+# whole repo, so it can't just return every file or the force layout won't
+# hold up. Each module contributes only its riskiest files (top N by the
+# risk_score already precomputed in PRECOMPUTE_HOTSPOTS_*), not its full
+# file list -- module hub nodes themselves come from MODULE_LIST (every
+# module, so the graph doesn't silently drop a module with no risky files),
+# and cross-module context comes from MODULE_COUPLING_PRECOMPUTED, both
+# already-indexed reads with no extra traversal.
+#
+# f.module is a plain string property (set at load time, see
+# LOAD_FILES_BATCH) so this groups by module without walking BELONGS_TO --
+# `WITH f ORDER BY f.risk_score DESC WITH f.module AS module, collect(f)
+# [0..N]` is the standard Cypher top-N-per-group idiom: the ORDER BY on the
+# row stream feeding a later collect() is preserved into that collect, so
+# `[0..N]` after it is exactly "this group's top N by risk_score", not an
+# arbitrary N.
+REPO_MAP_DEFAULT_FILES_PER_MODULE = 5
+
+REPO_MAP_TOP_FILES = """
+MATCH (f:File {is_deleted: false})
+WHERE f.risk_score IS NOT NULL
+WITH f
+ORDER BY f.risk_score DESC
+WITH f.module AS module, collect(f)[0..$files_per_module] AS top_files
+UNWIND top_files AS tf
+RETURN module, tf.path AS path, tf.risk_score AS risk_score
+"""
+
+# ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
 

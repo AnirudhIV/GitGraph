@@ -156,6 +156,11 @@ class ModuleGraphOut(BaseModel):
     edges: list[GraphEdge]
 
 
+class RepoMapOut(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
 class SearchResultOut(BaseModel):
     files: list[FileSummaryOut]
     authors: list[AuthorSummaryOut]

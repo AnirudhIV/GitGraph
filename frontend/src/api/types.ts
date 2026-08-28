@@ -148,6 +148,11 @@ export interface ModuleGraph {
   edges: GraphEdge[];
 }
 
+export interface RepoMap {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface SearchResult {
   files: FileSummary[];
   authors: AuthorSummary[];

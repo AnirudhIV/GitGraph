@@ -4,7 +4,7 @@ from pydantic import BaseModel, field_validator
 from app import ingest, queries, ratelimit
 from app.config import get_settings
 from app.db import run_query
-from app.schemas import HotspotOut, RepoStatsOut
+from app.schemas import GraphEdge, GraphNode, HotspotOut, RepoMapOut, RepoStatsOut
 
 router = APIRouter()
 
@@ -117,3 +117,65 @@ def get_hotspots(
         )
         for r in rows
     ]
+
+
+@router.get("/repo/map", response_model=RepoMapOut)
+def get_repo_map(
+    files_per_module: int = Query(queries.REPO_MAP_DEFAULT_FILES_PER_MODULE, ge=1, le=20),
+):
+    # Every module is a hub node (MODULE_LIST, already indexed) so a module
+    # with no risky files still shows up rather than silently vanishing;
+    # each module's riskiest files (bounded top-N, see REPO_MAP_TOP_FILES)
+    # are satellites; module-to-module coupling (already precomputed, same
+    # rows GET /modules/coupling serves) adds cross-module context. Nothing
+    # here returns every file -- the whole point of bounding per module is
+    # that this stays force-layout-sized regardless of repo size.
+    modules = run_query(queries.MODULE_LIST)
+    top_files = run_query(queries.REPO_MAP_TOP_FILES, {"files_per_module": files_per_module})
+    coupling = run_query(queries.MODULE_COUPLING_PRECOMPUTED, {"limit": 60})
+
+    max_file_risk = max((r["risk_score"] for r in top_files), default=1) or 1
+    risk_by_module: dict[str, float] = {}
+    for r in top_files:
+        risk_by_module[r["module"]] = risk_by_module.get(r["module"], 0) + r["risk_score"]
+    max_module_risk = max(risk_by_module.values(), default=1) or 1
+
+    module_names = {m["name"] for m in modules}
+
+    nodes = [
+        GraphNode(
+            id=m["name"],
+            kind="Module",
+            label=m["name"],
+            subtitle=f"{m['name']} - {m['file_count']} files",
+            hop=1,
+            weight=round(risk_by_module.get(m["name"], 0) / max_module_risk, 3),
+        )
+        for m in modules
+    ]
+    # MODULE_COUPLING has no is_deleted filter (it walks commit history, not
+    # current file state), so it can reference a module whose files were all
+    # since renamed away -- MODULE_LIST (current, live files only) is the
+    # authoritative node set, so drop any coupling edge pointing outside it
+    # rather than emitting a dangling edge.
+    edges = [
+        GraphEdge(source=c["module_a"], target=c["module_b"], weight=c["shared_commits"])
+        for c in coupling
+        if c["module_a"] in module_names and c["module_b"] in module_names
+    ]
+    for r in top_files:
+        if r["module"] not in module_names:
+            continue
+        nodes.append(
+            GraphNode(
+                id=r["path"],
+                kind="File",
+                label=r["path"].split("/")[-1],
+                subtitle=r["path"],
+                hop=2,
+                weight=round(r["risk_score"] / max_file_risk, 3),
+            )
+        )
+        edges.append(GraphEdge(source=r["module"], target=r["path"], weight=round(r["risk_score"], 3)))
+
+    return RepoMapOut(nodes=nodes, edges=edges)

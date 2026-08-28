@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 
 const LINKS = [
   { to: "/dashboard", label: "Dashboard", end: true },
+  { to: "/repo-map", label: "Repo Map" },
   { to: "/files", label: "Files" },
   { to: "/authors", label: "Authors" },
   { to: "/modules", label: "Modules" },
