@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, field_validator
 
@@ -121,49 +123,80 @@ def get_hotspots(
 
 @router.get("/repo/map", response_model=RepoMapOut)
 def get_repo_map(
-    min_count: int = Query(queries.REPO_FILE_COUPLING_DEFAULT_MIN_COUNT, ge=1),
-    limit: int = Query(50, ge=1, le=200),
-    max_files_per_commit: int = Query(queries.REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT, ge=1),
+    mode: Literal["all-time", "recent"] = Query(
+        "all-time", description="Rank and color nodes by risk_score (all-time) or risk_score_recent"
+    ),
+    top_n: int = Query(40, ge=5, le=100, description="How many risk-ranked files to include"),
+    max_files_per_commit: int = Query(
+        queries.HOTSPOT_DEFAULT_MAX_FILES_PER_COMMIT, ge=1, description="Excludes shotgun commits from coupling"
+    ),
 ):
-    # The repo's strongest file-coupling pairs, unanchored -- a real
-    # relationship (the same coupling BLAST_RADIUS_DIRECT shows per-file),
-    # not a layout device. An earlier version used module hub nodes with
-    # module-identity color, then synthetic per-module star edges once
-    # those hubs were dropped for being confusing next to file-risk color;
-    # this replaces both with the actual thing blast radius already shows,
-    # just repo-wide. Bounded to `limit` pairs, not every file -- that's
-    # what keeps the implied node set force-layout-sized regardless of repo
-    # size.
-    if min_count == queries.REPO_FILE_COUPLING_DEFAULT_MIN_COUNT and max_files_per_commit == (
-        queries.REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT
-    ):
-        rows = run_query(queries.REPO_FILE_COUPLING_PRECOMPUTED, {"limit": limit})
-    else:
-        rows = run_query(
-            queries.REPO_FILE_COUPLING,
-            {"min_count": min_count, "limit": limit, "max_files_per_commit": max_files_per_commit},
+    # Risk-first node selection, not coupling-first -- see the comment above
+    # REPO_MAP_SOLE_OWNERSHIP in queries.py for why an earlier
+    # coupling-pairs-first version could silently drop a genuinely risky
+    # file. HOTSPOTS_PRECOMPUTED already ranks every scored file; pull a
+    # generous slice and pick the top `top_n` by whichever score `mode`
+    # asks for (both ride along on every row already, so the toggle needs
+    # no separate query).
+    candidates = run_query(queries.HOTSPOTS_PRECOMPUTED, {"limit": max(top_n * 4, 150)})
+    score_key = "risk_score" if mode == "all-time" else "risk_score_recent"
+    candidates = [c for c in candidates if c.get(score_key) is not None]
+    candidates.sort(key=lambda c: c[score_key], reverse=True)
+    selected = candidates[:top_n]
+    if not selected:
+        return RepoMapOut(nodes=[], edges=[])
+
+    paths = [c["path"] for c in selected]
+    commit_count_by_path = {c["path"]: c["commit_count"] for c in selected}
+    score_by_path = {c["path"]: c[score_key] for c in selected}
+    max_score = max(score_by_path.values(), default=1) or 1
+
+    sole_owned = {r["path"] for r in run_query(queries.REPO_MAP_SOLE_OWNERSHIP, {"paths": paths})}
+    coupling_rows = run_query(
+        queries.REPO_MAP_COUPLING_AMONG, {"paths": paths, "max_files_per_commit": max_files_per_commit}
+    )
+
+    nodes = []
+    for c in selected:
+        path = c["path"]
+        risk_score = c.get("risk_score")
+        risk_score_recent = c.get("risk_score_recent")
+        # A 10% margin so noise around a flat score doesn't read as "trending".
+        trending_worse = (
+            risk_score is not None and risk_score_recent is not None and risk_score_recent > risk_score * 1.1
+        )
+        is_sole_owned = path in sole_owned
+        subtitle = f"{path} - risk {round(score_by_path[path], 2)}"
+        if is_sole_owned:
+            subtitle += " - sole-owned"
+        if trending_worse:
+            subtitle += " - trending up"
+        nodes.append(
+            GraphNode(
+                id=path,
+                kind="File",
+                label=path.split("/")[-1],
+                subtitle=subtitle,
+                hop=1,
+                weight=round(score_by_path[path] / max_score, 3),
+                sole_owned=is_sole_owned,
+                trending_worse=trending_worse,
+            )
         )
 
-    # The node set is whichever files actually appear in the returned
-    # pairs -- each pair's own risk_score rides along in the row (see the
-    # comment above REPO_FILE_COUPLING), so no second lookup is needed to
-    # color/size them the same way Dashboard colors risk.
-    risk_by_path: dict[str, float] = {}
-    for r in rows:
-        risk_by_path[r["path_a"]] = r["risk_score_a"] or 0.0
-        risk_by_path[r["path_b"]] = r["risk_score_b"] or 0.0
-    max_risk = max(risk_by_path.values(), default=1) or 1
+    # Coupling *density* (shared_commits relative to the less-active file's
+    # own activity), not a raw count -- see the comment above
+    # REPO_MAP_COUPLING_AMONG. Rescaled by 10 so it lands in the same
+    # numeric range GraphEdge weights already use elsewhere (raw
+    # shared_commits counts), rather than a 0-1 fraction collapsing every
+    # edge to the same minimum stroke width in GraphView.
+    edges = []
+    for r in coupling_rows:
+        ca = commit_count_by_path.get(r["path_a"])
+        cb = commit_count_by_path.get(r["path_b"])
+        if not ca or not cb:
+            continue
+        density = r["shared_commits"] / min(ca, cb)
+        edges.append(GraphEdge(source=r["path_a"], target=r["path_b"], weight=round(density * 10, 2)))
 
-    nodes = [
-        GraphNode(
-            id=path,
-            kind="File",
-            label=path.split("/")[-1],
-            subtitle=f"{path} - risk score {round(risk, 2)}",
-            hop=1,
-            weight=round(risk / max_risk, 3),
-        )
-        for path, risk in risk_by_path.items()
-    ]
-    edges = [GraphEdge(source=r["path_a"], target=r["path_b"], weight=r["shared_commits"]) for r in rows]
     return RepoMapOut(nodes=nodes, edges=edges)

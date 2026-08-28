@@ -669,58 +669,57 @@ LIMIT $limit
 # Deliberately bounded, unlike every other graph endpoint here which is
 # anchored on one file/author: this is the one *unanchored* view of the
 # whole repo, so it can't just return every file or the force layout won't
-# hold up -- capped to the top $limit strongest file-coupling pairs
-# repo-wide instead.
+# hold up.
 #
-# Same traversal shape as MODULE_COUPLING (see the comment above it for why
-# starting from the smaller, filterable-up-front set of non-shotgun commits
-# and fanning out beats starting from File and self-joining), just at file
-# instead of module granularity: two files are an edge here exactly when
-# BLAST_RADIUS_DIRECT would show them coupled for either endpoint. Each
-# file's own risk_score (already precomputed by PRECOMPUTE_HOTSPOTS_*) rides
-# along in the same RETURN so the caller doesn't need a second lookup to
-# color/size the node set the returned pairs imply.
-REPO_FILE_COUPLING_DEFAULT_MIN_COUNT = 3
-REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT = 10
+# Node selection is risk-first, not coupling-first: an earlier version
+# picked nodes from the top coupling *pairs*, which meant a genuinely risky
+# file with weak coupling just never showed up -- exactly backwards for a
+# "where are the landmines" view. HOTSPOTS_PRECOMPUTED already ranks every
+# scored file by risk_score; app.routers.repo.get_repo_map fetches a
+# generous slice of it and picks the top N by whichever of risk_score /
+# risk_score_recent the caller asked for (both already ride along in every
+# row, so no extra query for the toggle).
 
-REPO_FILE_COUPLING = """
-MATCH (c:Commit)
-WHERE c.files_changed >= 2 AND c.files_changed <= $max_files_per_commit
-MATCH (c)-[:MODIFIED]->(f1:File {is_deleted: false})
-MATCH (c)-[:MODIFIED]->(f2:File {is_deleted: false})
-WHERE f1.path < f2.path
-WITH f1, f2, count(DISTINCT c) AS shared_commits
-WHERE shared_commits >= $min_count
-RETURN f1.path AS path_a, f1.module AS module_a, f1.risk_score AS risk_score_a,
-       f2.path AS path_b, f2.module AS module_b, f2.risk_score AS risk_score_b,
-       shared_commits
-ORDER BY shared_commits DESC
-LIMIT $limit
+# Bounded to a specific path list (the already-selected risk-ranked node
+# set, never the whole repo) so this stays cheap regardless of repo size --
+# same author_count-over-MODIFIED-edges shape as HOTSPOTS_SIMPLE/ROLLUP, but
+# for "is this file down to a single owner" specifically rather than folded
+# into the risk_score formula (a file with 1 owner and one with 2 both get
+# smoothed into the same continuous term there; sole ownership is a
+# categorically different kind of danger worth flagging on its own).
+REPO_MAP_SOLE_OWNERSHIP = """
+UNWIND $paths AS p
+MATCH (f:File {path: p})<-[:MODIFIED]-(:Commit)<-[:AUTHORED]-(owner:Author)
+WITH f, count(DISTINCT owner) AS author_count
+WHERE author_count = 1
+RETURN f.path AS path
 """
 
-PRECOMPUTE_REPO_FILE_COUPLING = """
-MATCH (c:Commit)
-WHERE c.files_changed >= 2 AND c.files_changed <= $max_files_per_commit
-MATCH (c)-[:MODIFIED]->(f1:File {is_deleted: false})
-MATCH (c)-[:MODIFIED]->(f2:File {is_deleted: false})
+# Coupling among the already-selected node set only (never the whole repo),
+# and using coupling *density* -- shared_commits relative to how active the
+# less-active file is -- rather than a raw shared_commits count, computed in
+# Python from the commit_count each row already carries from
+# HOTSPOTS_PRECOMPUTED. Raw shared_commits is biased toward files that are
+# just busy in general; density is closer to "touching one of these usually
+# means touching the other", the more actionable signal here.
+#
+# Starts from commits touching *any* selected file (same "start from the
+# smaller, filterable set and fan out" shape as MODULE_COUPLING), collects
+# which of the selected files each commit touched, and pairs up only within
+# that per-commit list -- bounded by actual per-commit fan-out among the
+# selected files, not a full cartesian product over the node set.
+REPO_MAP_COUPLING_AMONG = """
+MATCH (f:File)
+WHERE f.path IN $paths
+MATCH (c:Commit)-[:MODIFIED]->(f)
+WHERE c.files_changed <= $max_files_per_commit
+WITH c, collect(DISTINCT f) AS touched
+WHERE size(touched) >= 2
+UNWIND touched AS f1
+UNWIND touched AS f2
+WITH c, f1, f2
 WHERE f1.path < f2.path
-WITH f1, f2, count(DISTINCT c) AS shared_commits
-WHERE shared_commits >= $min_count
-MERGE (f1)-[r:COUPLED_WITH]->(f2)
-SET r.shared_commits = shared_commits
-RETURN count(*) AS written
-"""
-
-# (:File)-[:COUPLED_WITH]->(:File) is a distinct pattern from Module's own
-# (:Module)-[:COUPLED_WITH]->(:Module) -- the differing node labels mean no
-# schema ambiguity between the two despite sharing a relationship type name.
-REPO_FILE_COUPLING_PRECOMPUTED = """
-MATCH (f1:File)-[r:COUPLED_WITH]->(f2:File)
-RETURN f1.path AS path_a, f1.module AS module_a, f1.risk_score AS risk_score_a,
-       f2.path AS path_b, f2.module AS module_b, f2.risk_score AS risk_score_b,
-       r.shared_commits AS shared_commits
-ORDER BY r.shared_commits DESC
-LIMIT $limit
+RETURN f1.path AS path_a, f2.path AS path_b, count(DISTINCT c) AS shared_commits
 """
 
 # ---------------------------------------------------------------------------

@@ -80,6 +80,13 @@ class GraphNode(BaseModel):
     subtitle: str = ""
     hop: int = 0
     weight: float = 1.0
+    # Repo-map-specific flags (default false elsewhere): sole_owned means
+    # every commit that ever touched this file came from one author (a
+    # categorically different danger than a low author_count smoothed into
+    # risk_score); trending_worse means risk_score_recent > risk_score, i.e.
+    # this file's risk is climbing, not just historically high.
+    sole_owned: bool = False
+    trending_worse: bool = False
 
 
 class GraphEdge(BaseModel):

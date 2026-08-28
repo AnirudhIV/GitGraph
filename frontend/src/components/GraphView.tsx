@@ -176,6 +176,7 @@ export function GraphView({
   navigable = true,
   colorForNode,
   hrefForNode,
+  strokeForNode,
 }: {
   nodes: ApiNode[];
   edges: ApiEdge[];
@@ -188,6 +189,11 @@ export function GraphView({
   // Overrides today's hop!==0 ? fileHref/authorHref : null click behavior.
   // Return null to make a node non-navigable. Omit to keep the default.
   hrefForNode?: (node: ApiNode) => string | null;
+  // Second, independent color channel for the node's ring (fill still comes
+  // from colorForNode/hop-tier) -- e.g. flagging a node as a *different
+  // kind* of important without repainting its severity color. Omit to keep
+  // the ring the same color as the fill (today's behavior).
+  strokeForNode?: (node: ApiNode) => string;
 }) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -425,6 +431,7 @@ export function GraphView({
             const { lines, radius: r } = layoutLabel(n.label, weightRadius(n), fontSize);
             const color = colorForNode ? colorForNode(n) : HOP_COLOR[n.hop] ?? HOP_COLOR[2];
             const href = hrefForNode ? hrefForNode(n) : n.hop !== 0 ? (n.kind === "Author" ? authorHref(n.id) : fileHref(n.id)) : null;
+            const ringColor = strokeForNode ? strokeForNode(n) : color;
 
             let pushX = 0;
             let pushY = 0;
@@ -474,8 +481,8 @@ export function GraphView({
                   <circle
                     r={r}
                     fill={isHub ? "transparent" : color}
-                    stroke={color}
-                    strokeWidth={isHub ? 2.5 : 1.5}
+                    stroke={ringColor}
+                    strokeWidth={isHub ? 2.5 : strokeForNode ? 3 : 1.5}
                   />
                   <text
                     x={0}

@@ -72,6 +72,8 @@ export interface GraphNode {
   subtitle: string;
   hop: number;
   weight: number;
+  sole_owned: boolean;
+  trending_worse: boolean;
 }
 
 export interface GraphEdge {

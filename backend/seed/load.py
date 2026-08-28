@@ -125,18 +125,6 @@ def precompute_module_coupling(
     db.run_write(queries.PRECOMPUTE_MODULE_COUPLING, params)
 
 
-def precompute_repo_file_coupling(
-    min_count: int = queries.REPO_FILE_COUPLING_DEFAULT_MIN_COUNT,
-    max_files_per_commit: int = queries.REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT,
-) -> None:
-    """Compute and store the repo's strongest file-to-file coupling pairs as
-    COUPLED_WITH edges between File nodes -- backs GET /repo/map. Same
-    write-once-read-many reasoning, and the same traversal shape, as
-    precompute_module_coupling, just one level down."""
-    params = {"min_count": min_count, "max_files_per_commit": max_files_per_commit}
-    db.run_write(queries.PRECOMPUTE_REPO_FILE_COUPLING, params)
-
-
 def mark_deleted(repo_path: str, seen_paths: set[str], progress: Callable[[str], None] | None = None) -> None:
     report = progress or print
     try:
@@ -240,8 +228,6 @@ def run_ingest(
     precompute_author_stats()
     report("Precomputing module coupling...")
     precompute_module_coupling()
-    report("Precomputing repo-wide file coupling...")
-    precompute_repo_file_coupling()
     report(f"Loaded graph in {time.time() - load_start:.1f}s.")
 
     stats = db.run_query(queries.REPO_STATS)
