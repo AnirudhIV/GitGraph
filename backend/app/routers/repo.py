@@ -4,7 +4,7 @@ from pydantic import BaseModel, field_validator
 from app import ingest, queries, ratelimit
 from app.config import get_settings
 from app.db import run_query
-from app.schemas import GraphNode, HotspotOut, RepoMapOut, RepoStatsOut
+from app.schemas import GraphEdge, GraphNode, HotspotOut, RepoMapOut, RepoStatsOut
 
 router = APIRouter()
 
@@ -144,4 +144,25 @@ def get_repo_map(
         )
         for r in top_files
     ]
-    return RepoMapOut(nodes=nodes, edges=[])
+
+    # No module node to hang these off any more, but files still need some
+    # connective tissue or this is just a scatter of dots, not a graph.
+    # REPO_MAP_TOP_FILES collects each module's files ordered by risk_score
+    # DESC before UNWIND (Cypher preserves that order through it), so within
+    # each module's own run of rows here, the first is that module's
+    # riskiest file -- star every other file in the module off of it. Same
+    # color scheme as the nodes (risk severity), so this doesn't reintroduce
+    # the module-identity color that made the hub version confusing.
+    by_module: dict[str, list[dict]] = {}
+    for r in top_files:
+        by_module.setdefault(r["module"], []).append(r)
+    edges = [
+        GraphEdge(
+            source=files[0]["path"],
+            target=other["path"],
+            weight=round((files[0]["risk_score"] + other["risk_score"]) / 2, 3),
+        )
+        for files in by_module.values()
+        for other in files[1:]
+    ]
+    return RepoMapOut(nodes=nodes, edges=edges)
