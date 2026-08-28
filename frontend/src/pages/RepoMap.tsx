@@ -56,7 +56,7 @@ export function RepoMap() {
         </p>
       </div>
 
-      <div className="card card-pad">
+      <div className="card-pad">
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 4, marginBottom: 4 }}>
           <button
             className="btn"

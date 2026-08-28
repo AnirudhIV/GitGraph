@@ -81,7 +81,7 @@ export function Collaboration() {
         </p>
       </div>
 
-      <div className="card card-pad" style={{ marginBottom: 20 }}>
+      <div className="card-pad" style={{ marginBottom: 20 }}>
         <h2 className="section-title">Team topology</h2>
         <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px" }}>
           The most active contributors. What groups people together (their position, not their color): a line
