@@ -84,9 +84,10 @@ export function Collaboration() {
       <div className="card card-pad" style={{ marginBottom: 20 }}>
         <h2 className="section-title">Team topology</h2>
         <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px" }}>
-          The most active contributors, clustered by which module they mostly work in. Two people connect when
-          they've both done real work in the same module — tight same-colored clusters are natural sub-teams;
-          someone bridging different colors works across boundaries.
+          The most active contributors, positioned by who they actually share files with — people who mostly edit
+          the same files are pulled close together, everyone else is pushed apart, so tight clusters are real
+          sub-teams. Color is each person's primary module, a broader area label. Someone bridging different colors
+          works across boundaries.
         </p>
         {topology.loading && <LoadingRows rows={8} height={40} />}
         {topology.error && <ErrorState error={topology.error} onRetry={topology.reload} />}
@@ -101,6 +102,7 @@ export function Collaboration() {
               height={560}
               colorForNode={topologyColor}
               hrefForNode={topologyHref}
+              spacingScale={1.7}
             />
             <GraphLegend
               items={[{ color: ["var(--cat-1)", "var(--cat-3)", "var(--cat-5)"], label: "colored by primary module" }]}

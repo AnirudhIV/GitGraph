@@ -177,6 +177,7 @@ export function GraphView({
   colorForNode,
   hrefForNode,
   strokeForNode,
+  spacingScale = 1,
 }: {
   nodes: ApiNode[];
   edges: ApiEdge[];
@@ -189,6 +190,13 @@ export function GraphView({
   // Overrides today's hop!==0 ? fileHref/authorHref : null click behavior.
   // Return null to make a node non-navigable. Omit to keep the default.
   hrefForNode?: (node: ApiNode) => string | null;
+  // Multiplies charge repulsion, link distance, and collide padding
+  // together. >1 pushes unconnected nodes further apart while strongly-
+  // weighted edges still pull their endpoints close (link distance already
+  // shrinks with edge weight) -- makes edge-driven clustering read more
+  // clearly for graphs where "who's close to whom" is the point, without
+  // changing anything for graphs that don't opt in.
+  spacingScale?: number;
   // Second, independent color channel for the node's ring (fill still comes
   // from colorForNode/hop-tier) -- e.g. flagging a node as a *different
   // kind* of important without repainting its severity color. Omit to keep
@@ -238,20 +246,20 @@ export function GraphView({
     };
 
     const angles = computeAngles(nodeCopies, linkCopies);
-    const RADIAL_BY_HOP: Record<number, number> = { 0: 0, 1: 190, 2: 370 };
+    const RADIAL_BY_HOP: Record<number, number> = { 0: 0, 1: 190 * spacingScale, 2: 370 * spacingScale };
     const targetX = (n: SimNode) => {
       const a = angles.get(n.id);
       if (a == null) return width / 2;
-      return width / 2 + Math.cos(a) * (RADIAL_BY_HOP[n.hop] ?? 370);
+      return width / 2 + Math.cos(a) * (RADIAL_BY_HOP[n.hop] ?? 370 * spacingScale);
     };
     const targetY = (n: SimNode) => {
       const a = angles.get(n.id);
       if (a == null) return height / 2;
-      return height / 2 + Math.sin(a) * (RADIAL_BY_HOP[n.hop] ?? 370);
+      return height / 2 + Math.sin(a) * (RADIAL_BY_HOP[n.hop] ?? 370 * spacingScale);
     };
 
     const sim = forceSimulation(nodeCopies)
-      .force("charge", forceManyBody().strength(-680))
+      .force("charge", forceManyBody().strength(-680 * spacingScale))
       .force(
         "link",
         forceLink<SimNode, SimLink>(linkCopies)
@@ -259,7 +267,7 @@ export function GraphView({
           .distance((l) => {
             const base = 260 - Math.min(90, (l.weight ?? 1) * 8);
             const jitter = (hash01(linkKey(l)) - 0.5) * 110;
-            return Math.max(90, base + jitter);
+            return Math.max(90, base + jitter) * spacingScale;
           })
       )
       .force("center", forceCenter(width / 2, height / 2))
@@ -275,7 +283,7 @@ export function GraphView({
         "collide",
         forceCollide((d) => {
           const sn = d as SimNode;
-          return layoutLabel(sn.label, weightRadius(sn), HOP_FONT_SIZE[sn.hop] ?? 10.5).radius + 22;
+          return layoutLabel(sn.label, weightRadius(sn), HOP_FONT_SIZE[sn.hop] ?? 10.5).radius + 22 * spacingScale;
         })
       )
       .stop();

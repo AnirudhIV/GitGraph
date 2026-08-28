@@ -621,31 +621,40 @@ WITH a, collect(m.name)[0] AS primary_module
 RETURN a.email AS email, primary_module
 """
 
-# Two authors are an edge here if they've both done real work (>= $min_touches
-# commits) in the same module -- a coarser, team-shaped relationship than
-# AUTHOR_NETWORK's shared-*file* edges. Starts from the small, filterable set
-# of modules (same "start from what's small and fan out" shape used
-# throughout this file) rather than an author x author cartesian: for each
-# module, collect its qualifying authors (among the selected set only), then
-# pair up within that module's own (small) author list. A pair sharing
-# several modules produces one row per shared module, so RETURN's implicit
-# grouping on (email_a, email_b) via count(*) is exactly "how many modules
-# this pair has in common" -- the edge weight.
-TEAM_TOPOLOGY_SHARED_MODULES = """
-MATCH (a:Author)-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(f:File)-[:BELONGS_TO]->(m:Module)
+# Two authors are an edge here if they've both done real work (>=
+# $min_touches commits) on the *same file* -- "who actually works with
+# whom", not just "both somewhere in a broad module like docs" (which is
+# what a module-level version of this showed first: almost every active
+# contributor touches docs/root eventually, so it produced a near-complete
+# graph, not clusters). Starts from the small, filterable set of files any
+# selected author has touched (same "start from what's small and fan out"
+# shape used throughout this file) rather than an author x author
+# cartesian: for each file, collect its qualifying authors (among the
+# selected set only, capped at $max_authors_per_file so a file like
+# README.md that half the repo has touched doesn't pair everyone with
+# everyone -- the same instinct as the shotgun-commit filter elsewhere in
+# this file, applied to files instead of commits), then pair up within that
+# file's own (small) author list. A pair sharing several files produces one
+# row per shared file, so the final WITH's grouping on (email_a, email_b)
+# via count(*) is exactly "how many files this pair has in common" -- the
+# edge weight, and what pulls them close together in the force layout (see
+# GraphView's link-distance formula: higher weight already means shorter
+# distance).
+TEAM_TOPOLOGY_SHARED_FILES = """
+MATCH (a:Author)-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(f:File {is_deleted: false})
 WHERE a.email IN $emails
-WITH m, a, count(DISTINCT c) AS touches
+WITH f, a, count(DISTINCT c) AS touches
 WHERE touches >= $min_touches
-WITH m, collect(a.email) AS emails
-WHERE size(emails) >= 2
+WITH f, collect(a.email) AS emails
+WHERE size(emails) >= 2 AND size(emails) <= $max_authors_per_file
 UNWIND emails AS email_a
 UNWIND emails AS email_b
 WITH email_a, email_b
 WHERE email_a < email_b
-WITH email_a, email_b, count(*) AS shared_modules
-ORDER BY shared_modules DESC
+WITH email_a, email_b, count(*) AS shared_files
+ORDER BY shared_files DESC
 LIMIT $limit
-RETURN email_a, email_b, shared_modules
+RETURN email_a, email_b, shared_files
 """
 
 # ---------------------------------------------------------------------------
