@@ -34,8 +34,9 @@ export function RepoMap() {
       <div className="page-header">
         <h1 className="page-title">Repo map</h1>
         <p className="page-subtitle">
-          The riskiest files across every module, all at once — sized and colored by risk score. Drag nodes,
-          scroll to zoom, click through to a file.
+          The riskiest files across every module, all at once — sized and colored by risk score. Lines aren't a
+          mined relationship like elsewhere in the app; they just cluster each module's files around its riskiest
+          one so this reads as groups instead of a scatter. Drag nodes, scroll to zoom, click through to a file.
         </p>
       </div>
 
