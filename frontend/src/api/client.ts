@@ -100,7 +100,7 @@ export const api = {
     post<{ job_id: string }>("/api/repo/ingest", { repo_url: repoUrl, max_commits: maxCommits }),
   ingestStatus: (jobId: string) => request<IngestJob>(`/api/repo/ingest/${jobId}`),
   hotspots: (limit = 20) => request<Hotspot[]>("/api/hotspots", { limit }),
-  repoMap: (filesPerModule = 5) => request<RepoMap>("/api/repo/map", { files_per_module: filesPerModule }),
+  repoMap: (limit = 50) => request<RepoMap>("/api/repo/map", { limit }),
 
   files: (search = "", limit = 50) => request<FileSummary[]>("/api/files", { search, limit }),
   file: (path: string) => request<FileDetail>(`/api/files/${encodePath(path)}`),

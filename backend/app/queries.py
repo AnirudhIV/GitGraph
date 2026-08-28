@@ -668,30 +668,58 @@ LIMIT $limit
 # Deliberately bounded, unlike every other graph endpoint here which is
 # anchored on one file/author: this is the one *unanchored* view of the
 # whole repo, so it can't just return every file or the force layout won't
-# hold up. Each module contributes only its riskiest files (top N by the
-# risk_score already precomputed in PRECOMPUTE_HOTSPOTS_*), not its full
-# file list -- module hub nodes themselves come from MODULE_LIST (every
-# module, so the graph doesn't silently drop a module with no risky files),
-# and cross-module context comes from MODULE_COUPLING_PRECOMPUTED, both
-# already-indexed reads with no extra traversal.
+# hold up -- capped to the top $limit strongest file-coupling pairs
+# repo-wide instead.
 #
-# f.module is a plain string property (set at load time, see
-# LOAD_FILES_BATCH) so this groups by module without walking BELONGS_TO --
-# `WITH f ORDER BY f.risk_score DESC WITH f.module AS module, collect(f)
-# [0..N]` is the standard Cypher top-N-per-group idiom: the ORDER BY on the
-# row stream feeding a later collect() is preserved into that collect, so
-# `[0..N]` after it is exactly "this group's top N by risk_score", not an
-# arbitrary N.
-REPO_MAP_DEFAULT_FILES_PER_MODULE = 5
+# Same traversal shape as MODULE_COUPLING (see the comment above it for why
+# starting from the smaller, filterable-up-front set of non-shotgun commits
+# and fanning out beats starting from File and self-joining), just at file
+# instead of module granularity: two files are an edge here exactly when
+# BLAST_RADIUS_DIRECT would show them coupled for either endpoint. Each
+# file's own risk_score (already precomputed by PRECOMPUTE_HOTSPOTS_*) rides
+# along in the same RETURN so the caller doesn't need a second lookup to
+# color/size the node set the returned pairs imply.
+REPO_FILE_COUPLING_DEFAULT_MIN_COUNT = 3
+REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT = 10
 
-REPO_MAP_TOP_FILES = """
-MATCH (f:File {is_deleted: false})
-WHERE f.risk_score IS NOT NULL
-WITH f
-ORDER BY f.risk_score DESC
-WITH f.module AS module, collect(f)[0..$files_per_module] AS top_files
-UNWIND top_files AS tf
-RETURN module, tf.path AS path, tf.risk_score AS risk_score
+REPO_FILE_COUPLING = """
+MATCH (c:Commit)
+WHERE c.files_changed >= 2 AND c.files_changed <= $max_files_per_commit
+MATCH (c)-[:MODIFIED]->(f1:File {is_deleted: false})
+MATCH (c)-[:MODIFIED]->(f2:File {is_deleted: false})
+WHERE f1.path < f2.path
+WITH f1, f2, count(DISTINCT c) AS shared_commits
+WHERE shared_commits >= $min_count
+RETURN f1.path AS path_a, f1.module AS module_a, f1.risk_score AS risk_score_a,
+       f2.path AS path_b, f2.module AS module_b, f2.risk_score AS risk_score_b,
+       shared_commits
+ORDER BY shared_commits DESC
+LIMIT $limit
+"""
+
+PRECOMPUTE_REPO_FILE_COUPLING = """
+MATCH (c:Commit)
+WHERE c.files_changed >= 2 AND c.files_changed <= $max_files_per_commit
+MATCH (c)-[:MODIFIED]->(f1:File {is_deleted: false})
+MATCH (c)-[:MODIFIED]->(f2:File {is_deleted: false})
+WHERE f1.path < f2.path
+WITH f1, f2, count(DISTINCT c) AS shared_commits
+WHERE shared_commits >= $min_count
+MERGE (f1)-[r:COUPLED_WITH]->(f2)
+SET r.shared_commits = shared_commits
+RETURN count(*) AS written
+"""
+
+# (:File)-[:COUPLED_WITH]->(:File) is a distinct pattern from Module's own
+# (:Module)-[:COUPLED_WITH]->(:Module) -- the differing node labels mean no
+# schema ambiguity between the two despite sharing a relationship type name.
+REPO_FILE_COUPLING_PRECOMPUTED = """
+MATCH (f1:File)-[r:COUPLED_WITH]->(f2:File)
+RETURN f1.path AS path_a, f1.module AS module_a, f1.risk_score AS risk_score_a,
+       f2.path AS path_b, f2.module AS module_b, f2.risk_score AS risk_score_b,
+       r.shared_commits AS shared_commits
+ORDER BY r.shared_commits DESC
+LIMIT $limit
 """
 
 # ---------------------------------------------------------------------------

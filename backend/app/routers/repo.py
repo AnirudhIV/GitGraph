@@ -121,48 +121,49 @@ def get_hotspots(
 
 @router.get("/repo/map", response_model=RepoMapOut)
 def get_repo_map(
-    files_per_module: int = Query(queries.REPO_MAP_DEFAULT_FILES_PER_MODULE, ge=1, le=20),
+    min_count: int = Query(queries.REPO_FILE_COUPLING_DEFAULT_MIN_COUNT, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    max_files_per_commit: int = Query(queries.REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT, ge=1),
 ):
-    # Just the riskiest files across every module -- module hub nodes and
-    # module-to-module coupling edges were tried here first, but mixing
-    # module-identity color with file-risk color in one graph read as
-    # confusing rather than informative, so this stays file-only. Still
-    # bounded per module (see REPO_MAP_TOP_FILES), not every file -- that's
-    # what keeps this force-layout-sized regardless of repo size, module
-    # hubs or not.
-    top_files = run_query(queries.REPO_MAP_TOP_FILES, {"files_per_module": files_per_module})
-    max_file_risk = max((r["risk_score"] for r in top_files), default=1) or 1
+    # The repo's strongest file-coupling pairs, unanchored -- a real
+    # relationship (the same coupling BLAST_RADIUS_DIRECT shows per-file),
+    # not a layout device. An earlier version used module hub nodes with
+    # module-identity color, then synthetic per-module star edges once
+    # those hubs were dropped for being confusing next to file-risk color;
+    # this replaces both with the actual thing blast radius already shows,
+    # just repo-wide. Bounded to `limit` pairs, not every file -- that's
+    # what keeps the implied node set force-layout-sized regardless of repo
+    # size.
+    if min_count == queries.REPO_FILE_COUPLING_DEFAULT_MIN_COUNT and max_files_per_commit == (
+        queries.REPO_FILE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT
+    ):
+        rows = run_query(queries.REPO_FILE_COUPLING_PRECOMPUTED, {"limit": limit})
+    else:
+        rows = run_query(
+            queries.REPO_FILE_COUPLING,
+            {"min_count": min_count, "limit": limit, "max_files_per_commit": max_files_per_commit},
+        )
+
+    # The node set is whichever files actually appear in the returned
+    # pairs -- each pair's own risk_score rides along in the row (see the
+    # comment above REPO_FILE_COUPLING), so no second lookup is needed to
+    # color/size them the same way Dashboard colors risk.
+    risk_by_path: dict[str, float] = {}
+    for r in rows:
+        risk_by_path[r["path_a"]] = r["risk_score_a"] or 0.0
+        risk_by_path[r["path_b"]] = r["risk_score_b"] or 0.0
+    max_risk = max(risk_by_path.values(), default=1) or 1
 
     nodes = [
         GraphNode(
-            id=r["path"],
+            id=path,
             kind="File",
-            label=r["path"].split("/")[-1],
-            subtitle=r["path"],
+            label=path.split("/")[-1],
+            subtitle=path,
             hop=1,
-            weight=round(r["risk_score"] / max_file_risk, 3),
+            weight=round(risk / max_risk, 3),
         )
-        for r in top_files
+        for path, risk in risk_by_path.items()
     ]
-
-    # No module node to hang these off any more, but files still need some
-    # connective tissue or this is just a scatter of dots, not a graph.
-    # REPO_MAP_TOP_FILES collects each module's files ordered by risk_score
-    # DESC before UNWIND (Cypher preserves that order through it), so within
-    # each module's own run of rows here, the first is that module's
-    # riskiest file -- star every other file in the module off of it. Same
-    # color scheme as the nodes (risk severity), so this doesn't reintroduce
-    # the module-identity color that made the hub version confusing.
-    by_module: dict[str, list[dict]] = {}
-    for r in top_files:
-        by_module.setdefault(r["module"], []).append(r)
-    edges = [
-        GraphEdge(
-            source=files[0]["path"],
-            target=other["path"],
-            weight=round((files[0]["risk_score"] + other["risk_score"]) / 2, 3),
-        )
-        for files in by_module.values()
-        for other in files[1:]
-    ]
+    edges = [GraphEdge(source=r["path_a"], target=r["path_b"], weight=r["shared_commits"]) for r in rows]
     return RepoMapOut(nodes=nodes, edges=edges)
