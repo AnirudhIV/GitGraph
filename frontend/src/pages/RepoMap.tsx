@@ -1,19 +1,17 @@
 import { useCallback } from "react";
-import { api, fileHref, moduleHref } from "../api/client";
+import { api, fileHref } from "../api/client";
 import { GraphLegend } from "../components/GraphLegend";
 import { GraphView } from "../components/GraphView";
-import { moduleColorVar } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { useApi } from "../hooks/useApi";
 import { riskColorVar, riskTier } from "../lib/riskColor";
 import type { GraphNode } from "../api/types";
 
 const LEGEND_ITEMS = [
-  { color: "var(--status-critical)", label: "critical risk file" },
-  { color: "var(--status-serious)", label: "serious risk file" },
-  { color: "var(--status-warning)", label: "warning risk file" },
-  { color: "var(--status-good)", label: "low risk file" },
-  { color: ["var(--cat-1)", "var(--cat-3)", "var(--cat-5)"], label: "module — colored by identity" },
+  { color: "var(--status-critical)", label: "critical risk" },
+  { color: "var(--status-serious)", label: "serious risk" },
+  { color: "var(--status-warning)", label: "warning risk" },
+  { color: "var(--status-good)", label: "low risk" },
 ];
 
 // weight on a File node here is already risk_score normalized to the max
@@ -21,12 +19,11 @@ const LEGEND_ITEMS = [
 // riskTier(weight, 1) grades it exactly the way Dashboard grades risk_score
 // against the list's own max -- just with that division already done.
 function colorForNode(n: GraphNode): string {
-  if (n.kind === "Module") return moduleColorVar(n.id);
   return riskColorVar(riskTier(n.weight, 1));
 }
 
 function hrefForNode(n: GraphNode): string {
-  return n.kind === "Module" ? moduleHref(n.id) : fileHref(n.id);
+  return fileHref(n.id);
 }
 
 export function RepoMap() {
@@ -37,8 +34,8 @@ export function RepoMap() {
       <div className="page-header">
         <h1 className="page-title">Repo map</h1>
         <p className="page-subtitle">
-          The whole repo at once, unanchored — every module, and each module's riskiest files. Modules are colored
-          by identity, files by risk score. Drag nodes, scroll to zoom, click through into the file or module.
+          The riskiest files across every module, all at once — sized and colored by risk score. Drag nodes,
+          scroll to zoom, click through to a file.
         </p>
       </div>
 
