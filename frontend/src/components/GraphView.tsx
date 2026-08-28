@@ -185,6 +185,7 @@ export function GraphView({
   strokeForNode,
   spacingScale = 1,
   clusterSensitivity = 1,
+  nearestInTooltip,
 }: {
   nodes: ApiNode[];
   edges: ApiEdge[];
@@ -216,6 +217,13 @@ export function GraphView({
   // edges stay at the base distance -- for graphs where "how much closer
   // are the real collaborators" is the point, not just "more room overall".
   clusterSensitivity?: number;
+  // Opt-in tooltip addition: lists the closest other nodes by settled
+  // layout distance (not just direct edges -- position already reflects the
+  // whole force layout, so it surfaces nodes pulled close by indirect/
+  // transitive overlap too). For team topology this reads as "who's this
+  // person's likely sub-team", which a hover tooltip otherwise can't show
+  // since edges alone only capture direct file-sharing pairs.
+  nearestInTooltip?: { label: string; count?: number };
 }) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -371,6 +379,23 @@ export function GraphView({
   }, [simLinks]);
 
   const maxHop = useMemo(() => nodes.reduce((m, n) => Math.max(m, n.hop), 0), [nodes]);
+
+  const nearestById = useMemo(() => {
+    const m = new Map<string, SimNode[]>();
+    if (!nearestInTooltip) return m;
+    const count = nearestInTooltip.count ?? 4;
+    const withPos = simNodes.filter((n) => n.x != null && n.y != null);
+    for (const n of withPos) {
+      const ranked = withPos
+        .filter((o) => o.id !== n.id)
+        .map((o) => ({ node: o, dist: Math.hypot((o.x ?? 0) - (n.x ?? 0), (o.y ?? 0) - (n.y ?? 0)) }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, count)
+        .map((r) => r.node);
+      m.set(n.id, ranked);
+    }
+    return m;
+  }, [simNodes, nearestInTooltip]);
 
   const updateNodePos = useCallback((id: string, x: number, y: number) => {
     setSimNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, fx: x, fy: y } : n)));
@@ -556,6 +581,7 @@ export function GraphView({
           const n = nodeById.get(hoveredId);
           if (!n) return null;
           const text = n.subtitle || n.label;
+          const nearest = nearestInTooltip ? nearestById.get(hoveredId) ?? [] : [];
           const tooltipWidth = 260;
           const flipX = pointerLocalPos.x + 18 + tooltipWidth > width;
           const flipY = pointerLocalPos.y + 46 > height;
@@ -581,6 +607,14 @@ export function GraphView({
               }}
             >
               {text}
+              {nearest.length > 0 && (
+                <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--border)" }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: 10.5, marginBottom: 2 }}>
+                    {nearestInTooltip!.label}
+                  </div>
+                  {nearest.map((o) => o.label).join(", ")}
+                </div>
+              )}
             </div>
           );
         })()}

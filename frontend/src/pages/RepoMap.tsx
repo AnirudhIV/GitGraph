@@ -41,18 +41,23 @@ function hrefForNode(n: GraphNode): string {
 
 export function RepoMap() {
   const [scoreMode, setScoreMode] = useState<"all-time" | "recent">("all-time");
-  const map = useApi(useCallback(() => api.repoMap(scoreMode, 40), [scoreMode]));
+  // 100 is the API's own ceiling (backend/app/routers/repo.py::get_repo_map,
+  // top_n: le=100) -- every file that clears the risk-score bar (see the
+  // backend's min-commits + real-coupling gate) is still filtered down to
+  // this rank regardless, so bumping past 100 would need that ceiling
+  // raised too, not just this call.
+  const map = useApi(useCallback(() => api.repoMap(scoreMode, 100), [scoreMode]));
 
   return (
     <div className="page-wide">
       <div className="page-header">
         <h1 className="page-title">Repo map</h1>
         <p className="page-subtitle">
-          The repo's riskiest files, all at once — not every file, just the ones worth worrying about. Bigger,
-          redder circles are riskier (color + size both encode risk score); a violet ring means only one person
-          has ever touched that file. A line means two files tend to change together, and more shared commits
-          pulls that pair closer together. Hover a file for its exact risk score and whether it's trending worse.
-          Drag to rearrange, scroll to zoom, click a file to open it.
+          The repo's riskiest files, not every file. Position = coupling: a line means two files tend to change
+          together, and the more often, the closer they're pulled — a tight cluster is a real group of files that
+          move together. Color and size = risk score instead, a separate signal; a violet ring means only one
+          person has ever touched that file. Hover for exact risk score, drag to rearrange, scroll to zoom, click
+          to open a file.
         </p>
       </div>
 
@@ -83,10 +88,23 @@ export function RepoMap() {
             <GraphView
               nodes={map.data.nodes}
               edges={map.data.edges}
-              height={640}
+              height={820}
               colorForNode={colorForNode}
               strokeForNode={strokeForNode}
               hrefForNode={hrefForNode}
+              // Same tuning Collaboration's team-topology graph uses (see
+              // Collaboration.tsx): both graphs are the same shape --
+              // unanchored nodes (every node hop:1, no hub) positioned
+              // purely by edge weight (there: shared_files: coupling
+              // density here). Without this, weight barely differentiates
+              // link distance and every pair reads about equally close;
+              // spacingScale pushes uncoupled files apart while
+              // clusterSensitivity makes strongly-coupled pairs pull in
+              // dramatically closer, so real coupling clusters actually
+              // read as tight instead of the whole graph looking uniformly
+              // loose.
+              spacingScale={1.7}
+              clusterSensitivity={2.8}
             />
             <GraphLegend items={LEGEND_ITEMS} />
           </>

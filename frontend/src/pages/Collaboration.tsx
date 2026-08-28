@@ -107,6 +107,7 @@ export function Collaboration() {
               hrefForNode={topologyHref}
               spacingScale={1.7}
               clusterSensitivity={2.8}
+              nearestInTooltip={{ label: "Closest by shared work (potential sub-team):", count: 4 }}
             />
             <GraphLegend
               items={[{ color: ["var(--cat-1)", "var(--cat-3)", "var(--cat-5)"], label: "colored by primary module" }]}

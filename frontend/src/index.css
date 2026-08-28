@@ -154,9 +154,11 @@ button {
 }
 
 .main-column {
+  width: 100%;
   min-width: 0;
   padding: 32px 40px 80px;
   max-width: 1180px;
+  margin: 0 auto;
 }
 
 @media (max-width: 640px) {
@@ -181,6 +183,15 @@ button {
   font-size: 14px;
   margin: 0;
   max-width: 60ch;
+}
+
+/* page-wide pages have up to 1250px to work with (see .main-column:has(>
+   .page-wide) below) -- a subtitle capped at the same 60ch as narrow pages
+   wraps into a tall, narrow column with most of that width sitting empty
+   beside it. Widened only here so a normal page's short subtitle keeps its
+   tighter, easier-to-read line length. */
+.page-wide .page-subtitle {
+  max-width: 92ch;
 }
 
 .card {
@@ -383,6 +394,45 @@ table.data-table td {
 
 table.data-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Opt-in per page: wider column + slightly larger text, without affecting
+   every other page that shares .main-column/.data-table. */
+.main-column:has(> .page-wide) {
+  max-width: 1250px;
+  padding-left: 48px;
+  padding-right: 48px;
+}
+
+.page-wide table.data-table {
+  font-size: 14.5px;
+  table-layout: fixed;
+}
+
+.page-wide table.data-table th,
+.page-wide table.data-table td {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.page-wide table.data-table th:first-child,
+.page-wide table.data-table td:first-child {
+  width: 34%;
+  padding-left: 10px;
+}
+
+.page-wide table.data-table th {
+  font-size: 12px;
+}
+
+/* Files/Collaboration opt into the same widening but sit a bit closer to
+   the sidebar than Modules/Authors. */
+.main-column:has(> .page-tight) {
+  padding-left: 10px;
+}
+
+.page-wide .row-secondary {
+  font-size: 13px;
 }
 
 .skeleton {

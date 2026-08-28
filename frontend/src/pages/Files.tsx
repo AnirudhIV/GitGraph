@@ -8,26 +8,32 @@ import { riskColorVar, riskTier } from "../lib/riskColor";
 
 export function Files() {
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"commits" | "risk">("commits");
   const [searchParams, setSearchParams] = useSearchParams();
   const moduleFilter = searchParams.get("module");
-  // A module filter narrows an already-fetched list rather than needing its
-  // own endpoint, so fetch more than the default top-80-by-churn to cover
-  // modules whose files wouldn't otherwise crack that ranking.
-  const files = useApi(useCallback(() => api.files(search, moduleFilter ? 400 : 80), [search, moduleFilter]));
+  // No cap: this fetches every file in the repo (the header search palette
+  // hits a separate /api/search endpoint with its own short default limit,
+  // unaffected by this page's limit).
+  const files = useApi(useCallback(() => api.files(search, sort), [search, sort]));
   const visibleFiles = useMemo(
     () => (moduleFilter ? (files.data ?? []).filter((f) => f.module === moduleFilter) : files.data ?? []),
     [files.data, moduleFilter]
   );
   // Same relative grading Dashboard uses (riskTier grades against the max
   // in the *current* list, not a fixed threshold -- risk_score has no
-  // universal scale) -- here that's whichever files are currently visible.
+  // universal scale) -- now the full file set, not just a capped slice, so
+  // this is the repo's actual riskiest file rather than an artifact of an
+  // arbitrary top-N cutoff.
   const maxRisk = useMemo(() => Math.max(0, ...visibleFiles.map((f) => f.risk_score ?? 0)), [visibleFiles]);
 
   return (
     <div className="page-wide page-tight">
       <div className="page-header">
         <h1 className="page-title">Files</h1>
-        <p className="page-subtitle">Every file that has appeared in the last N commits, ranked by commit count.</p>
+        <p className="page-subtitle">
+          Every file in the repo{visibleFiles.length > 0 ? ` (${visibleFiles.length})` : ""}, ranked by{" "}
+          {sort === "risk" ? "risk score" : "commit count"}.
+        </p>
       </div>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
@@ -38,6 +44,25 @@ export function Files() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+        </div>
+        <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Sort by</span>
+          {(["commits", "risk"] as const).map((s) => (
+            <button
+              key={s}
+              className="btn"
+              onClick={() => setSort(s)}
+              style={{
+                padding: "4px 10px",
+                fontSize: 12,
+                fontWeight: sort === s ? 700 : 400,
+                borderColor: sort === s ? "var(--cat-1)" : undefined,
+                color: sort === s ? "var(--cat-1)" : undefined,
+              }}
+            >
+              {s === "commits" ? "commit count" : "risk"}
+            </button>
+          ))}
         </div>
         {moduleFilter && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>

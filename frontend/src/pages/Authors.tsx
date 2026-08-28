@@ -9,7 +9,7 @@ export function Authors() {
   const authors = useApi(useCallback(() => api.authors(search, 60), [search]));
 
   return (
-    <div>
+    <div className="page-wide">
       <div className="page-header">
         <h1 className="page-title">Authors</h1>
         <p className="page-subtitle">Everyone who has committed, ranked by commit volume.</p>
@@ -43,7 +43,7 @@ export function Authors() {
                   </td>
                   <td className="mono">{a.commit_count}</td>
                   <td className="mono">{a.file_count}</td>
-                  <td style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                  <td style={{ color: "var(--text-muted)", fontSize: 13 }}>
                     {a.first_commit_at ? new Date(a.first_commit_at).getFullYear() : "—"}
                     {" – "}
                     {a.last_commit_at ? new Date(a.last_commit_at).getFullYear() : "—"}

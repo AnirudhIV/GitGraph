@@ -104,7 +104,8 @@ export const api = {
   repoMap: (mode: "all-time" | "recent" = "all-time", topN = 40) =>
     request<RepoMap>("/api/repo/map", { mode, top_n: topN }),
 
-  files: (search = "", limit = 50) => request<FileSummary[]>("/api/files", { search, limit }),
+  files: (search = "", sort: "commits" | "risk" = "commits", limit = 50000) =>
+    request<FileSummary[]>("/api/files", { search, sort, limit }),
   file: (path: string) => request<FileDetail>(`/api/files/${encodePath(path)}`),
   blastRadius: (path: string, depth = 2, minCount = 1) =>
     request<BlastRadius>(`/api/files/${encodePath(path)}/blast-radius`, {
@@ -118,7 +119,7 @@ export const api = {
     request<CollabPath>("/api/authors/path", { email_a: emailA, email_b: emailB }),
   authorNetwork: (email: string, minShared = 1, limit = 15) =>
     request<AuthorNetwork>(`/api/authors/${encodeURIComponent(email)}/network`, { min_shared: minShared, limit }),
-  authorTopology: (topN = 40, minTouches = 8) =>
+  authorTopology: (topN = 100, minTouches = 8) =>
     request<AuthorTopology>("/api/authors/topology", { top_n: topN, min_touches: minTouches }),
 
   modules: () => request<ModuleSummary[]>("/api/modules"),
