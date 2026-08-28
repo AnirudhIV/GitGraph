@@ -57,6 +57,8 @@ export interface FileDetail {
   commit_count: number;
   first_commit_at: string | null;
   last_commit_at: string | null;
+  risk_score: number | null;
+  risk_score_recent: number | null;
   recent_commits: RecentCommit[];
   owners: Owner[];
   co_changes: CoChange[];

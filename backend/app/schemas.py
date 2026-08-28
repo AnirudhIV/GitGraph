@@ -65,6 +65,8 @@ class FileDetailOut(BaseModel):
     commit_count: int
     first_commit_at: str | None
     last_commit_at: str | None
+    risk_score: float | None
+    risk_score_recent: float | None
     recent_commits: list[RecentCommitOut]
     owners: list[OwnerOut]
     co_changes: list[CoChangeOut]

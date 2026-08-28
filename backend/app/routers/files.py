@@ -59,6 +59,10 @@ def blast_radius(
     )
     nodes = [GraphNode(id=path, kind="File", label=path.split("/")[-1], subtitle=path, hop=0, weight=1.0)]
     edges: list[GraphEdge] = []
+    # Co-change coupling is symmetric, so the transitive query below can find
+    # the same pair of files as bridges for each other and return it in both
+    # directions -- track unordered pairs so that shows up once, not twice.
+    edge_pairs: set[frozenset[str]] = set()
     seen = {path}
     max_direct = max((r["shared_commits"] for r in direct_rows), default=1)
 
@@ -74,6 +78,7 @@ def blast_radius(
             )
         )
         edges.append(GraphEdge(source=path, target=r["path"], weight=r["shared_commits"]))
+        edge_pairs.add(frozenset((path, r["path"])))
         seen.add(r["path"])
 
     truncated = False
@@ -89,6 +94,12 @@ def blast_radius(
         )
         max_indirect = max((r["shared_commits"] for r in transitive_rows), default=1)
         for r in transitive_rows:
+            if r["via"] not in seen:
+                # The bridge file didn't make it into the direct (hop-1) set --
+                # e.g. cut off by that query's own limit -- so there's no node
+                # for this edge's source. Showing the 2nd-degree file anyway
+                # would strand it with no visible path back to the root.
+                continue
             if r["path"] not in seen:
                 if len(nodes) >= limit * 2 + 1:
                     truncated = True
@@ -104,6 +115,10 @@ def blast_radius(
                     )
                 )
                 seen.add(r["path"])
+            pair = frozenset((r["via"], r["path"]))
+            if pair in edge_pairs:
+                continue
+            edge_pairs.add(pair)
             edges.append(GraphEdge(source=r["via"], target=r["path"], weight=r["shared_commits"]))
 
     return BlastRadiusOut(root=path, nodes=nodes, edges=edges, truncated=truncated)
@@ -137,6 +152,8 @@ def get_file(path: str, recent_limit: int = 15, owner_limit: int = 10, co_change
         commit_count=row["commit_count"],
         first_commit_at=row["first_ts"],
         last_commit_at=row["last_ts"],
+        risk_score=round(row["risk_score"], 3) if row.get("risk_score") is not None else None,
+        risk_score_recent=round(row["risk_score_recent"], 3) if row.get("risk_score_recent") is not None else None,
         recent_commits=[
             RecentCommitOut(
                 hash=c["hash"],

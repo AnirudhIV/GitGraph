@@ -8,6 +8,7 @@ import { ModuleChip } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { StatTile } from "../components/StatTile";
 import { useApi } from "../hooks/useApi";
+import { riskColorVar, riskTier } from "../lib/riskColor";
 
 export function FileDetail() {
   const params = useParams();
@@ -16,6 +17,11 @@ export function FileDetail() {
 
   const detail = useApi(useCallback(() => api.file(path), [path]));
   const blast = useApi(useCallback(() => api.blastRadius(path, depth, 1), [path, depth]));
+  // riskTier() grades relative to the max score in a list (see lib/riskColor.ts),
+  // and there's no natural "list" on a single-file page -- top-1 hotspot gives
+  // the repo's current max so this file's severity still reads the same way
+  // Dashboard's does, not an invented absolute threshold.
+  const topHotspot = useApi(useCallback(() => api.hotspots(1), []));
 
   if (!path) return <EmptyState title="No file selected" />;
 
@@ -59,6 +65,24 @@ export function FileDetail() {
               label="First seen"
               value={detail.data.first_commit_at ? new Date(detail.data.first_commit_at).toLocaleDateString() : "—"}
             />
+            {detail.data.risk_score != null ? (
+              <StatTile
+                label="Risk score"
+                value={detail.data.risk_score.toFixed(2)}
+                sublabel={
+                  topHotspot.data && topHotspot.data[0]
+                    ? riskTier(detail.data.risk_score, topHotspot.data[0].risk_score) + " · vs. repo's riskiest"
+                    : undefined
+                }
+                valueColor={
+                  topHotspot.data && topHotspot.data[0]
+                    ? riskColorVar(riskTier(detail.data.risk_score, topHotspot.data[0].risk_score))
+                    : undefined
+                }
+              />
+            ) : (
+              <StatTile label="Risk score" value="—" sublabel="not enough commits to score" />
+            )}
           </div>
 
           <div className="card card-pad">

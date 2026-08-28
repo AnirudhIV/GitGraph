@@ -338,7 +338,8 @@ MATCH (lf:File {path: lp})
 OPTIONAL MATCH (lf)<-[:MODIFIED]-(c:Commit)
 WITH f, renamed_to, count(c) AS commit_count, min(c.timestamp) AS first_ts, max(c.timestamp) AS last_ts
 RETURN f.path AS path, f.extension AS extension, f.module AS module, f.is_deleted AS is_deleted,
-       commit_count, first_ts, last_ts, renamed_to.path AS renamed_to
+       commit_count, first_ts, last_ts, renamed_to.path AS renamed_to,
+       f.risk_score AS risk_score, f.risk_score_recent AS risk_score_recent
 """
 
 FILE_RECENT_COMMITS = """

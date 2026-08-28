@@ -159,7 +159,7 @@ def get_repo_map(
             id=path,
             kind="File",
             label=path.split("/")[-1],
-            subtitle=path,
+            subtitle=f"{path} - risk score {round(risk, 2)}",
             hop=1,
             weight=round(risk / max_risk, 3),
         )
