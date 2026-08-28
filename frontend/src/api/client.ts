@@ -8,6 +8,7 @@ import type {
   FileSummary,
   Hotspot,
   ModuleCoupling,
+  ModuleGraph,
   ModuleSummary,
   RepoStats,
   SearchResult,
@@ -116,6 +117,7 @@ export const api = {
 
   modules: () => request<ModuleSummary[]>("/api/modules"),
   moduleCoupling: (limit = 25) => request<ModuleCoupling[]>("/api/modules/coupling", { limit }),
+  moduleGraph: (limit = 40) => request<ModuleGraph>("/api/modules/graph", { limit }),
 
   search: (q: string) => request<SearchResult>("/api/search", { q }),
 };
@@ -133,4 +135,8 @@ export function fileHref(path: string): string {
 
 export function authorHref(email: string): string {
   return `/authors/${encodeURIComponent(email)}`;
+}
+
+export function moduleHref(name: string): string {
+  return `/files?module=${encodeURIComponent(name)}`;
 }

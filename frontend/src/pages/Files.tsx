@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, fileHref } from "../api/client";
 import { ModuleChip } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
@@ -7,33 +7,65 @@ import { useApi } from "../hooks/useApi";
 
 export function Files() {
   const [search, setSearch] = useState("");
-  const files = useApi(useCallback(() => api.files(search, 80), [search]));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const moduleFilter = searchParams.get("module");
+  // A module filter narrows an already-fetched list rather than needing its
+  // own endpoint, so fetch more than the default top-80-by-churn to cover
+  // modules whose files wouldn't otherwise crack that ranking.
+  const files = useApi(useCallback(() => api.files(search, moduleFilter ? 400 : 80), [search, moduleFilter]));
+  const visibleFiles = useMemo(
+    () => (moduleFilter ? (files.data ?? []).filter((f) => f.module === moduleFilter) : files.data ?? []),
+    [files.data, moduleFilter]
+  );
 
   return (
-    <div>
+    <div className="page-wide page-tight">
       <div className="page-header">
         <h1 className="page-title">Files</h1>
         <p className="page-subtitle">Every file that has appeared in the last N commits, ranked by commit count.</p>
       </div>
 
-      <div style={{ maxWidth: 420, marginBottom: 20 }}>
-        <input
-          type="search"
-          placeholder="Filter by path…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+        <div style={{ maxWidth: 420, flex: "1 1 260px" }}>
+          <input
+            type="search"
+            placeholder="Filter by path…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {moduleFilter && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Filtered by</span>
+            <ModuleChip name={moduleFilter} />
+            <button
+              className="btn"
+              style={{ padding: "2px 8px", fontSize: 11 }}
+              onClick={() =>
+                setSearchParams((prev) => {
+                  prev.delete("module");
+                  return prev;
+                })
+              }
+            >
+              clear
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="card card-pad">
         {files.loading && <LoadingRows rows={10} />}
         {files.error && <ErrorState error={files.error} onRetry={files.reload} />}
-        {files.data && files.data.length === 0 && (
-          <EmptyState title="No files match" subtitle="Try a different search, or check the seed script ran." />
+        {files.data && visibleFiles.length === 0 && (
+          <EmptyState
+            title="No files match"
+            subtitle={moduleFilter ? `No files found in module "${moduleFilter}".` : "Try a different search, or check the seed script ran."}
+          />
         )}
-        {files.data && files.data.length > 0 && (
+        {visibleFiles.length > 0 && (
           <div>
-            {files.data.map((f) => (
+            {visibleFiles.map((f) => (
               <Link key={f.path} to={fileHref(f.path)} className="link-row">
                 <div style={{ minWidth: 0 }}>
                   <div className="row-primary">{f.path}</div>

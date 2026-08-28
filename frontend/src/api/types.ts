@@ -143,6 +143,11 @@ export interface ModuleCoupling {
   shared_commits: number;
 }
 
+export interface ModuleGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface SearchResult {
   files: FileSummary[];
   authors: AuthorSummary[];

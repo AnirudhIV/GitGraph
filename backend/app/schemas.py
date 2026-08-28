@@ -151,6 +151,11 @@ class ModuleCouplingOut(BaseModel):
     shared_commits: int
 
 
+class ModuleGraphOut(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
 class SearchResultOut(BaseModel):
     files: list[FileSummaryOut]
     authors: list[AuthorSummaryOut]

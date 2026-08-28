@@ -1,15 +1,17 @@
 import { useCallback } from "react";
-import { api } from "../api/client";
-import { ModuleChip } from "../components/ModuleChip";
+import { api, moduleHref } from "../api/client";
+import { GraphView } from "../components/GraphView";
+import { ModuleChip, moduleColorVar } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { useApi } from "../hooks/useApi";
+import type { GraphNode } from "../api/types";
 
 export function Modules() {
   const modules = useApi(useCallback(() => api.modules(), []));
-  const coupling = useApi(useCallback(() => api.moduleCoupling(20), []));
+  const graph = useApi(useCallback(() => api.moduleGraph(40), []));
 
   return (
-    <div>
+    <div className="page-wide">
       <div className="page-header">
         <h1 className="page-title">Modules</h1>
         <p className="page-subtitle">
@@ -52,28 +54,23 @@ export function Modules() {
 
         <div className="card card-pad">
           <h2 className="section-title">Module coupling</h2>
-          <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
             Module pairs whose files were touched in the same commit most often — the file-level co-change graph
-            rolled up one level.
+            rolled up one level. Drag nodes, scroll to zoom, click a module to see its files.
           </p>
-          {coupling.loading && <LoadingRows rows={6} />}
-          {coupling.error && <ErrorState error={coupling.error} onRetry={coupling.reload} />}
-          {coupling.data && coupling.data.length === 0 && (
+          {graph.loading && <LoadingRows rows={6} />}
+          {graph.error && <ErrorState error={graph.error} onRetry={graph.reload} />}
+          {graph.data && graph.data.nodes.length === 0 && (
             <EmptyState title="No cross-module coupling found" subtitle="This repo's modules change independently." />
           )}
-          {coupling.data && coupling.data.length > 0 && (
-            <div className="stack" style={{ gap: 10 }}>
-              {coupling.data.map((c, i) => (
-                <div key={i} className="link-row">
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <ModuleChip name={c.module_a} />
-                    <span style={{ color: "var(--text-muted)" }}>↔</span>
-                    <ModuleChip name={c.module_b} />
-                  </div>
-                  <div className="row-secondary mono">{c.shared_commits} shared commits</div>
-                </div>
-              ))}
-            </div>
+          {graph.data && graph.data.nodes.length > 0 && (
+            <GraphView
+              nodes={graph.data.nodes}
+              edges={graph.data.edges}
+              transparent
+              colorForNode={(n: GraphNode) => moduleColorVar(n.id)}
+              hrefForNode={(n: GraphNode) => moduleHref(n.id)}
+            />
           )}
         </div>
       </div>
