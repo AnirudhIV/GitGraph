@@ -83,7 +83,7 @@ export function Collaboration() {
 
       <div className="card-pad" style={{ marginBottom: 20 }}>
         <h2 className="section-title">Team topology</h2>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px" }}>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 12px" }}>
           The most active contributors. What groups people together (their position, not their color): a line
           means two people have both committed to the same file(s) — more shared files, a thicker line and a
           closer pull — so a tight cluster is a real sub-team, working on the same code. No line among this group
@@ -102,7 +102,7 @@ export function Collaboration() {
             <GraphView
               nodes={topology.data.nodes}
               edges={topology.data.edges}
-              height={560}
+              height={820}
               colorForNode={topologyColor}
               hrefForNode={topologyHref}
               spacingScale={1.7}
