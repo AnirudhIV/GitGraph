@@ -49,8 +49,10 @@ export function RepoMap() {
         <h1 className="page-title">Repo map</h1>
         <p className="page-subtitle">
           The repo's riskiest files, all at once — not every file, just the ones worth worrying about. Bigger,
-          redder circles are riskier; a violet ring means only one person has ever touched that file. Lines show
-          which of these files tend to change together. Drag to rearrange, scroll to zoom, click a file to open it.
+          redder circles are riskier (color + size both encode risk score); a violet ring means only one person
+          has ever touched that file. A line means two files tend to change together, and more shared commits
+          pulls that pair closer together. Hover a file for its exact risk score and whether it's trending worse.
+          Drag to rearrange, scroll to zoom, click a file to open it.
         </p>
       </div>
 

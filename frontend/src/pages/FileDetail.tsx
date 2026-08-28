@@ -100,8 +100,10 @@ export function FileDetail() {
               </div>
             </div>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "4px 0 14px" }}>
-              Files that historically change in the same commits as this one — direct coupling (dark) and
-              second-degree propagation through those files (light). Drag nodes, scroll to zoom, click to open.
+              Files that historically change in the same commits as this one. Color shows how many hops from the
+              selected file (see the legend below the graph). A line means two files were touched in the same
+              commit — more shared commits pulls that pair closer together. Drag nodes, scroll to zoom, click to
+              open.
             </p>
             {blast.loading && <LoadingRows rows={6} height={30} />}
             {blast.error && <ErrorState error={blast.error} onRetry={blast.reload} />}

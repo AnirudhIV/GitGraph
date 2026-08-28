@@ -204,8 +204,9 @@ export function Home() {
       <section style={{ maxWidth: 1040, margin: "64px auto 0", padding: "0 24px" }}>
         <GraphView nodes={PREVIEW_NODES} edges={PREVIEW_EDGES} navigable={false} height={560} />
         <p style={{ textAlign: "center", fontSize: 12.5, color: "var(--text-muted)", margin: "14px auto 0", maxWidth: "52ch" }}>
-          A blast radius, live — drag nodes, scroll to zoom. This is sample data; every graph in the real app is
-          this same interactive view over your own repo's history.
+          A blast radius, live — color shows hop distance from the selected file (see the legend below the graph),
+          and a line means two files were touched in the same commit. Drag nodes, scroll to zoom. This is sample
+          data; every graph in the real app is this same interactive view over your own repo's history.
         </p>
       </section>
 

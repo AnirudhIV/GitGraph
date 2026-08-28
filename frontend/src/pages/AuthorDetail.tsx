@@ -69,8 +69,10 @@ export function AuthorDetail() {
             <div className="card card-pad">
               <h2 className="section-title">Collaboration network</h2>
               <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "4px 0 14px" }}>
-                Other authors who have touched the same files, weighted by how many files they share — the closest
-                nodes are the people most likely to already understand this author's work.
+                Other authors who have touched the same files (color: this author vs. a collaborator — see the
+                legend below the graph). A line means two authors share a file; more shared files pulls that pair
+                closer together, so the closest nodes are the people most likely to already understand this
+                author's work.
               </p>
               {network.loading && <LoadingRows rows={4} height={30} />}
               {network.error && <ErrorState error={network.error} onRetry={network.reload} />}

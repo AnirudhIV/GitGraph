@@ -84,10 +84,13 @@ export function Collaboration() {
       <div className="card card-pad" style={{ marginBottom: 20 }}>
         <h2 className="section-title">Team topology</h2>
         <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px" }}>
-          The most active contributors. A line means two people have both committed to the same file(s) — thicker
-          lines, more shared files — and pulls them closer together; no line among the group shown means their work
-          doesn't overlap enough to register, not an error. Color is each person's primary module, a broader area
-          label. Someone bridging different colors works across boundaries.
+          The most active contributors. What groups people together (their position, not their color): a line
+          means two people have both committed to the same file(s) — more shared files, a thicker line and a
+          closer pull — so a tight cluster is a real sub-team, working on the same code. No line among this group
+          just means their work doesn't overlap enough to register, not an error. Color is a separate signal —
+          each person's primary module, a broader "what area do they mostly work in" label, not what drives the
+          clustering. A cluster can span several colors; someone whose neighbors are mixed colors works across
+          boundaries.
         </p>
         {topology.loading && <LoadingRows rows={8} height={40} />}
         {topology.error && <ErrorState error={topology.error} onRetry={topology.reload} />}

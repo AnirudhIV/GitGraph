@@ -57,7 +57,9 @@ export function Modules() {
           <h2 className="section-title">Module coupling</h2>
           <p style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
             Module pairs whose files were touched in the same commit most often — the file-level co-change graph
-            rolled up one level. Drag nodes, scroll to zoom, click a module to see its files.
+            rolled up one level. Color is each module's identity (see the legend below). Bigger circles had more
+            total coupling activity; a line means two modules' files changed together, and more shared commits
+            pulls that pair closer together. Drag nodes, scroll to zoom, click a module to see its files.
           </p>
           {graph.loading && <LoadingRows rows={6} />}
           {graph.error && <ErrorState error={graph.error} onRetry={graph.reload} />}
