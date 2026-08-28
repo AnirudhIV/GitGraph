@@ -4,22 +4,24 @@ import { GraphLegend } from "../components/GraphLegend";
 import { GraphView } from "../components/GraphView";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { useApi } from "../hooks/useApi";
-import { riskColorVar, riskTier } from "../lib/riskColor";
 import type { GraphNode } from "../api/types";
 
 const LEGEND_ITEMS = [
-  { color: "var(--status-critical)", label: "critical risk" },
-  { color: "var(--status-serious)", label: "serious risk" },
-  { color: "var(--status-warning)", label: "warning risk" },
+  { color: "var(--status-critical)", label: "high risk" },
+  { color: "var(--status-warning)", label: "medium risk" },
   { color: "var(--status-good)", label: "low risk" },
 ];
 
-// weight on a File node here is already risk_score normalized to the max
-// among included files (see backend/app/routers/repo.py::get_repo_map), so
-// riskTier(weight, 1) grades it exactly the way Dashboard grades risk_score
-// against the list's own max -- just with that division already done.
+// weight on a File node here is already risk_score normalized 0-1 against
+// the max among included files (see backend/app/routers/repo.py::
+// get_repo_map). Dashboard's 4-tier riskTier() reads great as a text list,
+// but a graph this dense is easier to scan with fewer distinct hues -- 3
+// bands instead, same --status-* tokens (reusing the app's severity ramp,
+// not inventing new colors), just fewer of them.
 function colorForNode(n: GraphNode): string {
-  return riskColorVar(riskTier(n.weight, 1));
+  if (n.weight >= 0.66) return "var(--status-critical)";
+  if (n.weight >= 0.33) return "var(--status-warning)";
+  return "var(--status-good)";
 }
 
 function hrefForNode(n: GraphNode): string {
@@ -34,9 +36,9 @@ export function RepoMap() {
       <div className="page-header">
         <h1 className="page-title">Repo map</h1>
         <p className="page-subtitle">
-          The repo's strongest file-coupling pairs, all at once — the same coupling relationship blast radius shows
-          for one file, unanchored across the whole repo. Nodes are sized and colored by risk score. Drag nodes,
-          scroll to zoom, click through to a file.
+          Files that tend to change together, across the whole codebase at once — not just one file's neighborhood.
+          A line means two files keep showing up in the same commits. Bigger, redder circles are riskier files.
+          Drag to rearrange, scroll to zoom, click a file to open it.
         </p>
       </div>
 
