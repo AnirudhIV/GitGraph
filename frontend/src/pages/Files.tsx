@@ -80,12 +80,12 @@ export function Files() {
                 </div>
                 <div className="row-secondary" style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   {f.is_deleted && <span style={{ color: "var(--status-critical)" }}>deleted</span>}
-                  <span>{f.commit_count} commits</span>
                   {f.risk_score != null && (
                     <span style={{ color: riskColorVar(riskTier(f.risk_score, maxRisk)), fontWeight: 600 }}>
                       risk {f.risk_score.toFixed(2)}
                     </span>
                   )}
+                  <span>{f.commit_count} commits</span>
                 </div>
               </Link>
             ))}
