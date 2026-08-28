@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app import queries
@@ -23,9 +25,14 @@ DEFAULT_MAX_FILES_PER_COMMIT = 10
 @router.get("/files", response_model=list[FileSummaryOut])
 def list_files(
     search: str = Query("", description="Substring match on file path"),
-    limit: int = Query(50, ge=1, le=500),
+    # High enough to cover "every file in the repo" for any realistically
+    # sized project (the Files page always asks for all of them, sorted
+    # rather than paginated) while still bounding a single query.
+    limit: int = Query(50, ge=1, le=50000),
+    sort: Literal["commits", "risk"] = Query("commits", description="Rank by commit_count or risk_score"),
 ):
-    rows = run_query(queries.SEARCH_FILES, {"q": search, "limit": limit})
+    query = queries.SEARCH_FILES_BY_RISK if sort == "risk" else queries.SEARCH_FILES
+    rows = run_query(query, {"q": search, "limit": limit})
     return [
         FileSummaryOut(
             path=r["path"],

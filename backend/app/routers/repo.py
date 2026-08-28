@@ -130,6 +130,12 @@ def get_repo_map(
     max_files_per_commit: int = Query(
         queries.HOTSPOT_DEFAULT_MAX_FILES_PER_COMMIT, ge=1, description="Excludes shotgun commits from coupling"
     ),
+    # Same role as TEAM_TOPOLOGY_SHARED_FILES's min_touches/edge_limit --
+    # without a floor, a single shared commit between two busy files counted
+    # as "coupling" (two-thirds of pairs in practice), swamping the pairs
+    # that actually mean something.
+    min_shared_commits: int = Query(3, ge=1, description="Commits two files must share before it counts as coupling"),
+    edge_limit: int = Query(120, ge=1, le=400),
 ):
     # Risk-first node selection, not coupling-first -- see the comment above
     # REPO_MAP_SOLE_OWNERSHIP in queries.py for why an earlier
@@ -153,7 +159,13 @@ def get_repo_map(
 
     sole_owned = {r["path"] for r in run_query(queries.REPO_MAP_SOLE_OWNERSHIP, {"paths": paths})}
     coupling_rows = run_query(
-        queries.REPO_MAP_COUPLING_AMONG, {"paths": paths, "max_files_per_commit": max_files_per_commit}
+        queries.REPO_MAP_COUPLING_AMONG,
+        {
+            "paths": paths,
+            "max_files_per_commit": max_files_per_commit,
+            "min_shared_commits": min_shared_commits,
+            "edge_limit": edge_limit,
+        },
     )
 
     nodes = []
@@ -186,17 +198,26 @@ def get_repo_map(
 
     # Coupling *density* (shared_commits relative to the less-active file's
     # own activity), not a raw count -- see the comment above
-    # REPO_MAP_COUPLING_AMONG. Rescaled by 10 so it lands in the same
-    # numeric range GraphEdge weights already use elsewhere (raw
-    # shared_commits counts), rather than a 0-1 fraction collapsing every
-    # edge to the same minimum stroke width in GraphView.
-    edges = []
+    # REPO_MAP_COUPLING_AMONG. Scaled relative to the strongest density
+    # actually present in this response, same idiom author_topology already
+    # uses for node weight (commit_count / max_commits among the selected
+    # set) -- a flat *10 assumed density routinely approaches its 0-1
+    # ceiling, but real coupling density rarely gets close (it means "nearly
+    # every commit to the quieter file also touched the other one"), so in
+    # practice every edge landed bunched in a narrow low band regardless of
+    # how strong the coupling was relative to everything else in the repo.
+    # Normalizing against this response's own max keeps the strongest real
+    # pair pulling all the way to GraphView's clustering floor.
+    densities = []
     for r in coupling_rows:
         ca = commit_count_by_path.get(r["path_a"])
         cb = commit_count_by_path.get(r["path_b"])
         if not ca or not cb:
             continue
-        density = r["shared_commits"] / min(ca, cb)
-        edges.append(GraphEdge(source=r["path_a"], target=r["path_b"], weight=round(density * 10, 2)))
+        densities.append((r["path_a"], r["path_b"], r["shared_commits"] / min(ca, cb)))
+    max_density = max((d for _, _, d in densities), default=1) or 1
+    edges = [
+        GraphEdge(source=a, target=b, weight=round((d / max_density) * 10, 2)) for a, b, d in densities
+    ]
 
     return RepoMapOut(nodes=nodes, edges=edges)

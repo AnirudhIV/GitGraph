@@ -766,6 +766,11 @@ RETURN f.path AS path
 # which of the selected files each commit touched, and pairs up only within
 # that per-commit list -- bounded by actual per-commit fan-out among the
 # selected files, not a full cartesian product over the node set.
+# min_shared_commits / limit mirror TEAM_TOPOLOGY_SHARED_FILES's min_touches
+# and edge_limit -- without them this returned every pair that ever shared
+# even a single commit (in this repo: 393 of 633 pairs, i.e. two-thirds,
+# were a lone shared commit each), which is noise, not coupling, and drowned
+# out the real pairs both visually and in the clustering layout.
 REPO_MAP_COUPLING_AMONG = """
 MATCH (f:File)
 WHERE f.path IN $paths
@@ -777,7 +782,11 @@ UNWIND touched AS f1
 UNWIND touched AS f2
 WITH c, f1, f2
 WHERE f1.path < f2.path
-RETURN f1.path AS path_a, f2.path AS path_b, count(DISTINCT c) AS shared_commits
+WITH f1.path AS path_a, f2.path AS path_b, count(DISTINCT c) AS shared_commits
+WHERE shared_commits >= $min_shared_commits
+RETURN path_a, path_b, shared_commits
+ORDER BY shared_commits DESC
+LIMIT $edge_limit
 """
 
 # ---------------------------------------------------------------------------
@@ -792,6 +801,24 @@ WITH f, count(c) AS commit_count
 RETURN f.path AS path, f.extension AS extension, f.module AS module, commit_count, f.is_deleted AS is_deleted,
        f.risk_score AS risk_score
 ORDER BY commit_count DESC
+LIMIT $limit
+"""
+
+# Same shape as SEARCH_FILES, ordered by risk instead -- kept as its own
+# query rather than a dynamic ORDER BY so both stay plain, cacheable
+# strings. Cypher treats null as the largest value, so a plain "risk_score
+# DESC" would float every not-yet-scored file to the very top; sorting on
+# "risk_score IS NULL" first pushes nulls to the bottom regardless of
+# direction, then breaks ties by commit_count so the ordering is still
+# deterministic for the (also unscored) files sharing that last spot.
+SEARCH_FILES_BY_RISK = """
+MATCH (f:File)
+WHERE toLower(f.path) CONTAINS toLower($q)
+OPTIONAL MATCH (f)<-[:MODIFIED]-(c:Commit)
+WITH f, count(c) AS commit_count
+RETURN f.path AS path, f.extension AS extension, f.module AS module, commit_count, f.is_deleted AS is_deleted,
+       f.risk_score AS risk_score
+ORDER BY f.risk_score IS NULL, f.risk_score DESC, commit_count DESC
 LIMIT $limit
 """
 
