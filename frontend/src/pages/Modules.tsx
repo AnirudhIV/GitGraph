@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { api, moduleHref } from "../api/client";
+import { GraphLegend } from "../components/GraphLegend";
 import { GraphView } from "../components/GraphView";
 import { ModuleChip, moduleColorVar } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
@@ -64,13 +65,18 @@ export function Modules() {
             <EmptyState title="No cross-module coupling found" subtitle="This repo's modules change independently." />
           )}
           {graph.data && graph.data.nodes.length > 0 && (
-            <GraphView
-              nodes={graph.data.nodes}
-              edges={graph.data.edges}
-              transparent
-              colorForNode={(n: GraphNode) => moduleColorVar(n.id)}
-              hrefForNode={(n: GraphNode) => moduleHref(n.id)}
-            />
+            <>
+              <GraphView
+                nodes={graph.data.nodes}
+                edges={graph.data.edges}
+                transparent
+                colorForNode={(n: GraphNode) => moduleColorVar(n.id)}
+                hrefForNode={(n: GraphNode) => moduleHref(n.id)}
+              />
+              <GraphLegend
+                items={[{ color: ["var(--cat-1)", "var(--cat-3)", "var(--cat-5)"], label: "colored by module identity" }]}
+              />
+            </>
           )}
         </div>
       </div>

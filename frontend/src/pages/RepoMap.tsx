@@ -1,11 +1,20 @@
 import { useCallback } from "react";
 import { api, fileHref, moduleHref } from "../api/client";
+import { GraphLegend } from "../components/GraphLegend";
 import { GraphView } from "../components/GraphView";
 import { moduleColorVar } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { useApi } from "../hooks/useApi";
 import { riskColorVar, riskTier } from "../lib/riskColor";
 import type { GraphNode } from "../api/types";
+
+const LEGEND_ITEMS = [
+  { color: "var(--status-critical)", label: "critical risk file" },
+  { color: "var(--status-serious)", label: "serious risk file" },
+  { color: "var(--status-warning)", label: "warning risk file" },
+  { color: "var(--status-good)", label: "low risk file" },
+  { color: ["var(--cat-1)", "var(--cat-3)", "var(--cat-5)"], label: "module — colored by identity" },
+];
 
 // weight on a File node here is already risk_score normalized to the max
 // among included files (see backend/app/routers/repo.py::get_repo_map), so
@@ -40,14 +49,17 @@ export function RepoMap() {
           <EmptyState title="Nothing to map yet" subtitle="Run the seed script to load a repository's history." />
         )}
         {map.data && map.data.nodes.length > 0 && (
-          <GraphView
-            nodes={map.data.nodes}
-            edges={map.data.edges}
-            height={640}
-            transparent
-            colorForNode={colorForNode}
-            hrefForNode={hrefForNode}
-          />
+          <>
+            <GraphView
+              nodes={map.data.nodes}
+              edges={map.data.edges}
+              height={640}
+              transparent
+              colorForNode={colorForNode}
+              hrefForNode={hrefForNode}
+            />
+            <GraphLegend items={LEGEND_ITEMS} />
+          </>
         )}
       </div>
     </div>
