@@ -84,10 +84,10 @@ export function Collaboration() {
       <div className="card card-pad" style={{ marginBottom: 20 }}>
         <h2 className="section-title">Team topology</h2>
         <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px" }}>
-          The most active contributors, positioned by who they actually share files with — people who mostly edit
-          the same files are pulled close together, everyone else is pushed apart, so tight clusters are real
-          sub-teams. Color is each person's primary module, a broader area label. Someone bridging different colors
-          works across boundaries.
+          The most active contributors. A line means two people have both committed to the same file(s) — thicker
+          lines, more shared files — and pulls them closer together; no line among the group shown means their work
+          doesn't overlap enough to register, not an error. Color is each person's primary module, a broader area
+          label. Someone bridging different colors works across boundaries.
         </p>
         {topology.loading && <LoadingRows rows={8} height={40} />}
         {topology.error && <ErrorState error={topology.error} onRetry={topology.reload} />}
