@@ -163,7 +163,13 @@ function fitView(nodeCopies: SimNode[], width: number, height: number): { x: num
   const pad = 24;
   const bboxW = Math.max(1, maxX - minX);
   const bboxH = Math.max(1, maxY - minY);
-  const scale = Math.min(1.4, Math.max(0.3, Math.min((width - pad * 2) / bboxW, (height - pad * 2) / bboxH)));
+  // No lower floor beyond a sanity minimum: a graph fully visible but small
+  // beats one that's clipped by the container. This used to floor at 0.3,
+  // which clipped sprawling layouts (e.g. spacingScale pushing unconnected
+  // nodes far out under charge repulsion with nothing pulling them back) --
+  // "whole graph visible on load" always wins over a minimum zoom level;
+  // scroll-to-zoom is already how you get closer after that.
+  const scale = Math.min(1.4, Math.max(0.06, Math.min((width - pad * 2) / bboxW, (height - pad * 2) / bboxH)));
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
   return { x: width / 2 - cx * scale, y: height / 2 - cy * scale, scale };
