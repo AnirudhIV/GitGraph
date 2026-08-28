@@ -33,6 +33,7 @@ def list_files(
             module=r["module"] or "",
             commit_count=r["commit_count"],
             is_deleted=r["is_deleted"],
+            risk_score=round(r["risk_score"], 3) if r.get("risk_score") is not None else None,
         )
         for r in rows
     ]

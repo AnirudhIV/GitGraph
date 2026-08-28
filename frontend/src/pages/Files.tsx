@@ -4,6 +4,7 @@ import { api, fileHref } from "../api/client";
 import { ModuleChip } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { useApi } from "../hooks/useApi";
+import { riskColorVar, riskTier } from "../lib/riskColor";
 
 export function Files() {
   const [search, setSearch] = useState("");
@@ -17,6 +18,10 @@ export function Files() {
     () => (moduleFilter ? (files.data ?? []).filter((f) => f.module === moduleFilter) : files.data ?? []),
     [files.data, moduleFilter]
   );
+  // Same relative grading Dashboard uses (riskTier grades against the max
+  // in the *current* list, not a fixed threshold -- risk_score has no
+  // universal scale) -- here that's whichever files are currently visible.
+  const maxRisk = useMemo(() => Math.max(0, ...visibleFiles.map((f) => f.risk_score ?? 0)), [visibleFiles]);
 
   return (
     <div className="page-wide page-tight">
@@ -73,9 +78,14 @@ export function Files() {
                     <ModuleChip name={f.module} />
                   </div>
                 </div>
-                <div className="row-secondary">
-                  {f.is_deleted && <span style={{ color: "var(--status-critical)", marginRight: 8 }}>deleted</span>}
-                  {f.commit_count} commits
+                <div className="row-secondary" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {f.is_deleted && <span style={{ color: "var(--status-critical)" }}>deleted</span>}
+                  <span>{f.commit_count} commits</span>
+                  {f.risk_score != null && (
+                    <span style={{ color: riskColorVar(riskTier(f.risk_score, maxRisk)), fontWeight: 600 }}>
+                      risk {f.risk_score.toFixed(2)}
+                    </span>
+                  )}
                 </div>
               </Link>
             ))}

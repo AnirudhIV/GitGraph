@@ -24,6 +24,7 @@ export interface FileSummary {
   module: string;
   commit_count: number;
   is_deleted: boolean;
+  risk_score: number | null;
 }
 
 export interface RecentCommit {

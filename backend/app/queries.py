@@ -732,7 +732,8 @@ MATCH (f:File)
 WHERE toLower(f.path) CONTAINS toLower($q)
 OPTIONAL MATCH (f)<-[:MODIFIED]-(c:Commit)
 WITH f, count(c) AS commit_count
-RETURN f.path AS path, f.extension AS extension, f.module AS module, commit_count, f.is_deleted AS is_deleted
+RETURN f.path AS path, f.extension AS extension, f.module AS module, commit_count, f.is_deleted AS is_deleted,
+       f.risk_score AS risk_score
 ORDER BY commit_count DESC
 LIMIT $limit
 """

@@ -32,6 +32,7 @@ class FileSummaryOut(BaseModel):
     module: str
     commit_count: int
     is_deleted: bool
+    risk_score: float | None
 
 
 class RecentCommitOut(BaseModel):
