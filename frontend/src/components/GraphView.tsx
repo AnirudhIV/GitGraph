@@ -184,6 +184,7 @@ export function GraphView({
   hrefForNode,
   strokeForNode,
   spacingScale = 1,
+  clusterSensitivity = 1,
 }: {
   nodes: ApiNode[];
   edges: ApiEdge[];
@@ -208,6 +209,13 @@ export function GraphView({
   // kind* of important without repainting its severity color. Omit to keep
   // the ring the same color as the fill (today's behavior).
   strokeForNode?: (node: ApiNode) => string;
+  // How steeply link distance responds to edge weight, independent of
+  // spacingScale (which scales everything uniformly, so it can't change how
+  // *different* a strong pair looks from a weak one). >1 makes the
+  // strongest edges pull their endpoints dramatically closer while weak/no
+  // edges stay at the base distance -- for graphs where "how much closer
+  // are the real collaborators" is the point, not just "more room overall".
+  clusterSensitivity?: number;
 }) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -287,9 +295,18 @@ export function GraphView({
         forceLink<SimNode, SimLink>(linkCopies)
           .id((d) => d.id)
           .distance((l) => {
-            const base = 260 - Math.min(90, (l.weight ?? 1) * 8);
-            const jitter = (hash01(linkKey(l)) - 0.5) * 110;
-            return Math.max(90, base + jitter) * spacingScale;
+            // No cap on the reduction itself (unlike before) -- the floor
+            // below already prevents it from going negative/absurd, and
+            // removing the cap lets clusterSensitivity keep differentiating
+            // all the way up to whatever the real max weight in this graph
+            // is, instead of every edge above ~11 looking identically close.
+            const reduction = (l.weight ?? 1) * 8 * clusterSensitivity;
+            const base = 260 - reduction;
+            // Jitter shrinks as sensitivity rises so a genuinely tight
+            // cluster reads as tight, not noisy -- at high sensitivity the
+            // weight signal should dominate, not this per-edge randomness.
+            const jitter = (hash01(linkKey(l)) - 0.5) * (110 / Math.max(1, clusterSensitivity));
+            return Math.max(40, base + jitter) * spacingScale;
           })
       )
       .force("center", forceCenter(width / 2, height / 2))
