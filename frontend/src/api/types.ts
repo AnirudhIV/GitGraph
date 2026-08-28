@@ -15,6 +15,7 @@ export interface Hotspot {
   author_count: number;
   coupling_density: number;
   risk_score: number;
+  risk_score_recent: number;
 }
 
 export interface FileSummary {

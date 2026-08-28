@@ -131,24 +131,43 @@ RETURN file_count, commit_count, author_count, count(m) AS module_count, first_t
 # the original, un-rolled-up query shape (guarded by has_rename_history,
 # set at load time in LOAD_RENAMES_BATCH), and HOTSPOTS_ROLLUP pays the
 # lineage-traversal cost only for the small minority that actually need it.
+#   ((now.epochSeconds - datetime(c.timestamp).epochSeconds) / 86400.0) is a
+#   commit's age in days as a plain float (avoiding duration.between(...).days,
+#   which is a calendar *component*, not total elapsed days -- the wrong
+#   thing to feed exp() here). exp(-age / $half_life_days) is 1.0 for a
+#   commit right now, 0.5 at exactly one half-life, and asymptotic to 0 for
+#   old history. commit_weight_recent sums that per commit (replacing a flat
+#   COUNT); coupled_file_weight_recent sums, per distinct coupled file, the
+#   *most recent* co-change commit's decay (so a file coupled both 3 years
+#   ago and last week counts once, weighted by the recent occurrence) --
+#   replacing a flat COUNT DISTINCT. Same coupling_density/author_count/log
+#   shape as risk_score, just built from decayed sums instead of counts.
 HOTSPOTS_SIMPLE = """
 MATCH (f:File {is_deleted: false})
 WHERE coalesce(f.has_rename_history, false) = false
 MATCH (f)<-[:MODIFIED]-(c:Commit)
-WITH f, count(DISTINCT c) AS commit_count
+WITH f, count(DISTINCT c) AS commit_count,
+     sum(exp(-((datetime().epochSeconds - datetime(c.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS commit_weight_recent
 WHERE commit_count >= $min_commits
 MATCH (f)<-[:MODIFIED]-(c2:Commit)-[:MODIFIED]->(other:File)
 WHERE other <> f AND c2.files_changed <= $max_files_per_commit
 MATCH (other)-[:RENAMED_TO*0..20]->(canonical:File)
 WHERE NOT (canonical)-[:RENAMED_TO]->()
-WITH f, commit_count, count(DISTINCT canonical) AS coupled_file_count
+WITH f, commit_count, commit_weight_recent, canonical,
+     max(exp(-((datetime().epochSeconds - datetime(c2.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS file_decay
+WITH f, commit_count, commit_weight_recent,
+     count(DISTINCT canonical) AS coupled_file_count, sum(file_decay) AS coupled_file_weight_recent
 MATCH (a:Author)-[:AUTHORED]->(:Commit)-[:MODIFIED]->(f)
-WITH f, commit_count, coupled_file_count, count(DISTINCT a) AS author_count
+WITH f, commit_count, coupled_file_count, commit_weight_recent, coupled_file_weight_recent,
+     count(DISTINCT a) AS author_count
 WITH f, commit_count, coupled_file_count, author_count,
-     toFloat(coupled_file_count) / commit_count AS coupling_density
+     toFloat(coupled_file_count) / commit_count AS coupling_density,
+     commit_weight_recent, coupled_file_weight_recent,
+     coupled_file_weight_recent / commit_weight_recent AS coupling_density_recent
 RETURN f.path AS path, f.module AS module, commit_count, coupled_file_count, author_count,
        coupling_density,
-       coupling_density * (1.0 / author_count) * log(commit_count + 1) AS risk_score
+       coupling_density * (1.0 / author_count) * log(commit_count + 1) AS risk_score,
+       coupling_density_recent * (1.0 / author_count) * log(commit_weight_recent + 1) AS risk_score_recent
 ORDER BY risk_score DESC
 LIMIT $limit
 """
@@ -166,22 +185,30 @@ OPTIONAL MATCH (predecessor:File)-[:RENAMED_TO*1..20]->(f)
 WITH f, [f.path] + collect(DISTINCT predecessor.path) AS lineage
 UNWIND lineage AS lp
 MATCH (lf:File {path: lp})<-[:MODIFIED]-(c:Commit)
-WITH f, lineage, count(DISTINCT c) AS commit_count
+WITH f, lineage, count(DISTINCT c) AS commit_count,
+     sum(exp(-((datetime().epochSeconds - datetime(c.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS commit_weight_recent
 WHERE commit_count >= $min_commits
 UNWIND lineage AS lp2
 MATCH (lf2:File {path: lp2})<-[:MODIFIED]-(c2:Commit)-[:MODIFIED]->(other:File)
 WHERE NOT other.path IN lineage AND c2.files_changed <= $max_files_per_commit
 MATCH (other)-[:RENAMED_TO*0..20]->(canonical:File)
 WHERE NOT (canonical)-[:RENAMED_TO]->()
-WITH f, lineage, commit_count, count(DISTINCT canonical) AS coupled_file_count
+WITH f, lineage, commit_count, commit_weight_recent, canonical,
+     max(exp(-((datetime().epochSeconds - datetime(c2.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS file_decay
+WITH f, lineage, commit_count, commit_weight_recent,
+     count(DISTINCT canonical) AS coupled_file_count, sum(file_decay) AS coupled_file_weight_recent
 UNWIND lineage AS lp3
 MATCH (a:Author)-[:AUTHORED]->(:Commit)-[:MODIFIED]->(lf3:File {path: lp3})
-WITH f, commit_count, coupled_file_count, count(DISTINCT a) AS author_count
+WITH f, commit_count, coupled_file_count, commit_weight_recent, coupled_file_weight_recent,
+     count(DISTINCT a) AS author_count
 WITH f, commit_count, coupled_file_count, author_count,
-     toFloat(coupled_file_count) / commit_count AS coupling_density
+     toFloat(coupled_file_count) / commit_count AS coupling_density,
+     commit_weight_recent, coupled_file_weight_recent,
+     coupled_file_weight_recent / commit_weight_recent AS coupling_density_recent
 RETURN f.path AS path, f.module AS module, commit_count, coupled_file_count, author_count,
        coupling_density,
-       coupling_density * (1.0 / author_count) * log(commit_count + 1) AS risk_score
+       coupling_density * (1.0 / author_count) * log(commit_count + 1) AS risk_score,
+       coupling_density_recent * (1.0 / author_count) * log(commit_weight_recent + 1) AS risk_score_recent
 ORDER BY risk_score DESC
 LIMIT $limit
 """
@@ -209,22 +236,30 @@ PRECOMPUTE_HOTSPOTS_SIMPLE = """
 MATCH (f:File {is_deleted: false})
 WHERE coalesce(f.has_rename_history, false) = false
 MATCH (f)<-[:MODIFIED]-(c:Commit)
-WITH f, count(DISTINCT c) AS commit_count
+WITH f, count(DISTINCT c) AS commit_count,
+     sum(exp(-((datetime().epochSeconds - datetime(c.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS commit_weight_recent
 WHERE commit_count >= $min_commits
 MATCH (f)<-[:MODIFIED]-(c2:Commit)-[:MODIFIED]->(other:File)
 WHERE other <> f AND c2.files_changed <= $max_files_per_commit
 MATCH (other)-[:RENAMED_TO*0..20]->(canonical:File)
 WHERE NOT (canonical)-[:RENAMED_TO]->()
-WITH f, commit_count, count(DISTINCT canonical) AS coupled_file_count
+WITH f, commit_count, commit_weight_recent, canonical,
+     max(exp(-((datetime().epochSeconds - datetime(c2.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS file_decay
+WITH f, commit_count, commit_weight_recent,
+     count(DISTINCT canonical) AS coupled_file_count, sum(file_decay) AS coupled_file_weight_recent
 MATCH (a:Author)-[:AUTHORED]->(:Commit)-[:MODIFIED]->(f)
-WITH f, commit_count, coupled_file_count, count(DISTINCT a) AS author_count
+WITH f, commit_count, coupled_file_count, commit_weight_recent, coupled_file_weight_recent,
+     count(DISTINCT a) AS author_count
 WITH f, commit_count, coupled_file_count, author_count,
-     toFloat(coupled_file_count) / commit_count AS coupling_density
+     toFloat(coupled_file_count) / commit_count AS coupling_density,
+     commit_weight_recent, coupled_file_weight_recent,
+     coupled_file_weight_recent / commit_weight_recent AS coupling_density_recent
 SET f.hotspot_commit_count = commit_count,
     f.hotspot_coupled_file_count = coupled_file_count,
     f.hotspot_author_count = author_count,
     f.hotspot_coupling_density = coupling_density,
-    f.risk_score = coupling_density * (1.0 / author_count) * log(commit_count + 1)
+    f.risk_score = coupling_density * (1.0 / author_count) * log(commit_count + 1),
+    f.risk_score_recent = coupling_density_recent * (1.0 / author_count) * log(commit_weight_recent + 1)
 RETURN count(f) AS written
 """
 
@@ -235,24 +270,32 @@ OPTIONAL MATCH (predecessor:File)-[:RENAMED_TO*1..20]->(f)
 WITH f, [f.path] + collect(DISTINCT predecessor.path) AS lineage
 UNWIND lineage AS lp
 MATCH (lf:File {path: lp})<-[:MODIFIED]-(c:Commit)
-WITH f, lineage, count(DISTINCT c) AS commit_count
+WITH f, lineage, count(DISTINCT c) AS commit_count,
+     sum(exp(-((datetime().epochSeconds - datetime(c.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS commit_weight_recent
 WHERE commit_count >= $min_commits
 UNWIND lineage AS lp2
 MATCH (lf2:File {path: lp2})<-[:MODIFIED]-(c2:Commit)-[:MODIFIED]->(other:File)
 WHERE NOT other.path IN lineage AND c2.files_changed <= $max_files_per_commit
 MATCH (other)-[:RENAMED_TO*0..20]->(canonical:File)
 WHERE NOT (canonical)-[:RENAMED_TO]->()
-WITH f, lineage, commit_count, count(DISTINCT canonical) AS coupled_file_count
+WITH f, lineage, commit_count, commit_weight_recent, canonical,
+     max(exp(-((datetime().epochSeconds - datetime(c2.timestamp).epochSeconds) / 86400.0) / $half_life_days)) AS file_decay
+WITH f, lineage, commit_count, commit_weight_recent,
+     count(DISTINCT canonical) AS coupled_file_count, sum(file_decay) AS coupled_file_weight_recent
 UNWIND lineage AS lp3
 MATCH (a:Author)-[:AUTHORED]->(:Commit)-[:MODIFIED]->(lf3:File {path: lp3})
-WITH f, commit_count, coupled_file_count, count(DISTINCT a) AS author_count
+WITH f, commit_count, coupled_file_count, commit_weight_recent, coupled_file_weight_recent,
+     count(DISTINCT a) AS author_count
 WITH f, commit_count, coupled_file_count, author_count,
-     toFloat(coupled_file_count) / commit_count AS coupling_density
+     toFloat(coupled_file_count) / commit_count AS coupling_density,
+     commit_weight_recent, coupled_file_weight_recent,
+     coupled_file_weight_recent / commit_weight_recent AS coupling_density_recent
 SET f.hotspot_commit_count = commit_count,
     f.hotspot_coupled_file_count = coupled_file_count,
     f.hotspot_author_count = author_count,
     f.hotspot_coupling_density = coupling_density,
-    f.risk_score = coupling_density * (1.0 / author_count) * log(commit_count + 1)
+    f.risk_score = coupling_density * (1.0 / author_count) * log(commit_count + 1),
+    f.risk_score_recent = coupling_density_recent * (1.0 / author_count) * log(commit_weight_recent + 1)
 RETURN count(f) AS written
 """
 
@@ -267,7 +310,8 @@ RETURN f.path AS path, f.module AS module,
        f.hotspot_coupled_file_count AS coupled_file_count,
        f.hotspot_author_count AS author_count,
        f.hotspot_coupling_density AS coupling_density,
-       f.risk_score AS risk_score
+       f.risk_score AS risk_score,
+       f.risk_score_recent AS risk_score_recent
 ORDER BY f.risk_score DESC
 LIMIT $limit
 """

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fileHref } from "../api/client";
 import { ModuleChip } from "../components/ModuleChip";
@@ -19,6 +19,7 @@ function formatDate(iso: string | null): string {
 export function Dashboard() {
   const stats = useApi(useCallback(() => api.stats(), []));
   const hotspots = useApi(useCallback(() => api.hotspots(12), []));
+  const [scoreMode, setScoreMode] = useState<"all-time" | "recent">("all-time");
 
   return (
     <div>
@@ -54,10 +55,27 @@ export function Dashboard() {
             <h2 className="section-title" style={{ margin: 0 }}>
               Hotspots — highest risk files
             </h2>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                className="btn"
+                onClick={() => setScoreMode("all-time")}
+                style={{ borderColor: scoreMode === "all-time" ? "var(--cat-1)" : undefined }}
+              >
+                All-time
+              </button>
+              <button
+                className="btn"
+                onClick={() => setScoreMode("recent")}
+                style={{ borderColor: scoreMode === "recent" ? "var(--cat-1)" : undefined }}
+              >
+                Recent
+              </button>
+            </div>
           </div>
           <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
-            Ranked by commit churn × coupling fan-out ÷ bus factor — files that change often, drag other files
-            along with them, and are known to few people.
+            {scoreMode === "all-time"
+              ? "Ranked by commit churn × coupling fan-out ÷ bus factor — files that change often, drag other files along with them, and are known to few people."
+              : "Same formula, but commits and coupling are exponentially decayed by age — a coupling pattern from years ago barely counts, so this surfaces files that are hot right now, not just historically."}
           </p>
           {hotspots.loading && <LoadingRows rows={6} />}
           {hotspots.error && <ErrorState error={hotspots.error} onRetry={hotspots.reload} />}
@@ -67,9 +85,13 @@ export function Dashboard() {
           {hotspots.data && hotspots.data.length > 0 && (
             <div className="stack" style={{ gap: 8 }}>
               {(() => {
-                const maxScore = Math.max(...hotspots.data.map((h) => h.risk_score));
-                return hotspots.data.map((h) => {
-                  const tier = riskTier(h.risk_score, maxScore);
+                const scoreOf = (h: (typeof hotspots.data)[number]) =>
+                  scoreMode === "all-time" ? h.risk_score : h.risk_score_recent;
+                const sorted = [...hotspots.data].sort((a, b) => scoreOf(b) - scoreOf(a));
+                const maxScore = Math.max(...sorted.map(scoreOf));
+                return sorted.map((h) => {
+                  const score = scoreOf(h);
+                  const tier = riskTier(score, maxScore);
                   const color = riskColorVar(tier);
                   return (
                     <Link
@@ -99,7 +121,7 @@ export function Dashboard() {
                             color,
                           }}
                         >
-                          {h.risk_score.toFixed(2)}
+                          {score.toFixed(2)}
                         </div>
                         <div
                           style={{
@@ -111,7 +133,7 @@ export function Dashboard() {
                             marginTop: 3,
                           }}
                         >
-                          risk score
+                          {scoreMode === "all-time" ? "risk score" : "recent risk"}
                         </div>
                       </div>
                     </Link>

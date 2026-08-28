@@ -23,6 +23,7 @@ class HotspotOut(BaseModel):
     author_count: int
     coupling_density: float
     risk_score: float
+    risk_score_recent: float
 
 
 class FileSummaryOut(BaseModel):

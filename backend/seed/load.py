@@ -87,8 +87,10 @@ def load_commits(records: list[dict]) -> None:
 def precompute_hotspots(
     min_commits: int = queries.HOTSPOT_DEFAULT_MIN_COMMITS,
     max_files_per_commit: int = queries.HOTSPOT_DEFAULT_MAX_FILES_PER_COMMIT,
+    half_life_days: float | None = None,
 ) -> None:
-    """Compute and store risk_score/hotspot_* on every qualifying File node.
+    """Compute and store risk_score/risk_score_recent/hotspot_* on every
+    qualifying File node.
 
     GET /api/hotspots used to run this computation fresh on every request,
     but the graph only changes on a re-track -- a write-once-read-many
@@ -98,7 +100,9 @@ def precompute_hotspots(
     HOTSPOT_DEFAULT_MIN_COMMITS in app.queries for what happens if an API
     caller asks with different ones.
     """
-    params = {"min_commits": min_commits, "max_files_per_commit": max_files_per_commit}
+    if half_life_days is None:
+        half_life_days = get_settings().hotspot_recency_half_life_days
+    params = {"min_commits": min_commits, "max_files_per_commit": max_files_per_commit, "half_life_days": half_life_days}
     db.run_write(queries.PRECOMPUTE_HOTSPOTS_SIMPLE, params)
     db.run_write(queries.PRECOMPUTE_HOTSPOTS_ROLLUP, params)
 

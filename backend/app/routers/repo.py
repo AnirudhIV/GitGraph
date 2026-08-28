@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, field_validator
 
 from app import ingest, queries, ratelimit
+from app.config import get_settings
 from app.db import run_query
 from app.schemas import HotspotOut, RepoStatsOut
 
@@ -94,7 +95,12 @@ def get_hotspots(
     if min_commits == queries.HOTSPOT_DEFAULT_MIN_COMMITS and max_files_per_commit == queries.HOTSPOT_DEFAULT_MAX_FILES_PER_COMMIT:
         rows = run_query(queries.HOTSPOTS_PRECOMPUTED, {"limit": limit})
     else:
-        params = {"min_commits": min_commits, "limit": limit, "max_files_per_commit": max_files_per_commit}
+        params = {
+            "min_commits": min_commits,
+            "limit": limit,
+            "max_files_per_commit": max_files_per_commit,
+            "half_life_days": get_settings().hotspot_recency_half_life_days,
+        }
         rows = run_query(queries.HOTSPOTS_SIMPLE, params) + run_query(queries.HOTSPOTS_ROLLUP, params)
         rows.sort(key=lambda r: r["risk_score"], reverse=True)
         rows = rows[:limit]
@@ -107,6 +113,7 @@ def get_hotspots(
             author_count=r["author_count"],
             coupling_density=round(r["coupling_density"], 3),
             risk_score=round(r["risk_score"], 3),
+            risk_score_recent=round(r["risk_score_recent"], 3) if r.get("risk_score_recent") is not None else 0.0,
         )
         for r in rows
     ]

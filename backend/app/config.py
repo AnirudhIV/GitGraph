@@ -16,6 +16,12 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173"
 
+    # Half-life (in days) for the recency-weighted hotspot score
+    # (risk_score_recent): a commit/coupling this many days old contributes
+    # half the weight of one happening now, decaying exponentially from
+    # there. See queries.py's HOTSPOTS_* for how this feeds the formula.
+    hotspot_recency_half_life_days: float = 180.0
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property
