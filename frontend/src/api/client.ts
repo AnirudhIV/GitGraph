@@ -2,6 +2,7 @@ import type {
   AuthorDetail,
   AuthorNetwork,
   AuthorSummary,
+  AuthorTopology,
   BlastRadius,
   CollabPath,
   FileDetail,
@@ -117,6 +118,8 @@ export const api = {
     request<CollabPath>("/api/authors/path", { email_a: emailA, email_b: emailB }),
   authorNetwork: (email: string, minShared = 1, limit = 15) =>
     request<AuthorNetwork>(`/api/authors/${encodeURIComponent(email)}/network`, { min_shared: minShared, limit }),
+  authorTopology: (topN = 40, minTouches = 8) =>
+    request<AuthorTopology>("/api/authors/topology", { top_n: topN, min_touches: minTouches }),
 
   modules: () => request<ModuleSummary[]>("/api/modules"),
   moduleCoupling: (limit = 25) => request<ModuleCoupling[]>("/api/modules/coupling", { limit }),

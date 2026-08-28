@@ -87,6 +87,10 @@ class GraphNode(BaseModel):
     # this file's risk is climbing, not just historically high.
     sole_owned: bool = False
     trending_worse: bool = False
+    # Generic category-to-color-by, e.g. an author's primary module in team
+    # topology -- reused via moduleColorVar() on the frontend rather than a
+    # new color scheme. Empty string (falsy) where a node has no such group.
+    group: str = ""
 
 
 class GraphEdge(BaseModel):
@@ -134,6 +138,11 @@ class AuthorNetworkOut(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     at_risk_files: list[SuccessionFileOut]
+
+
+class AuthorTopologyOut(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
 
 
 class CollabPathStepOut(BaseModel):

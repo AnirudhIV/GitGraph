@@ -50,7 +50,7 @@ const QUESTIONS = [
 // real, interactive GraphView (force layout, drag, zoom, hover) so what you
 // see here is exactly what the app produces, just with `navigable={false}`
 // so a stray click can't route to a file that doesn't exist.
-const PREVIEW_NODES_BASE: Omit<GraphNode, "sole_owned" | "trending_worse">[] = [
+const PREVIEW_NODES_BASE: Omit<GraphNode, "sole_owned" | "trending_worse" | "group">[] = [
   { id: "root", kind: "File", label: "charge.ts", subtitle: "payments/charge.ts", hop: 0, weight: 2 },
   { id: "h1a", kind: "File", label: "webhook.ts", subtitle: "payments/webhook.ts", hop: 1, weight: 3 },
   { id: "h1b", kind: "File", label: "invoice.ts", subtitle: "billing/invoice.ts", hop: 1, weight: 1 },
@@ -61,7 +61,12 @@ const PREVIEW_NODES_BASE: Omit<GraphNode, "sole_owned" | "trending_worse">[] = [
   { id: "h2d", kind: "File", label: "routes.ts", subtitle: "api/routes.ts", hop: 2, weight: 0 },
   { id: "h2e", kind: "File", label: "payments.test.ts", subtitle: "tests/payments.test.ts", hop: 2, weight: 1 },
 ];
-const PREVIEW_NODES: GraphNode[] = PREVIEW_NODES_BASE.map((n) => ({ ...n, sole_owned: false, trending_worse: false }));
+const PREVIEW_NODES: GraphNode[] = PREVIEW_NODES_BASE.map((n) => ({
+  ...n,
+  sole_owned: false,
+  trending_worse: false,
+  group: "",
+}));
 
 const PREVIEW_EDGES: GraphEdge[] = [
   { source: "root", target: "h1a", weight: 6 },

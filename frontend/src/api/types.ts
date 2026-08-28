@@ -74,6 +74,12 @@ export interface GraphNode {
   weight: number;
   sole_owned: boolean;
   trending_worse: boolean;
+  group: string;
+}
+
+export interface AuthorTopology {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface GraphEdge {

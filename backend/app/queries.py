@@ -600,6 +600,55 @@ LIMIT $limit
 """
 
 # ---------------------------------------------------------------------------
+# Team topology: unanchored author network, clustered by which module they
+# mostly work in (app.routers.authors.author_topology)
+# ---------------------------------------------------------------------------
+
+# Bounded to a specific email list (the already-selected top-N active
+# authors from AUTHOR_LIST_PRECOMPUTED, never every author who ever made a
+# drive-by commit) so this stays cheap regardless of contributor count.
+#
+# "Primary module" per author uses the same ORDER-BY-then-collect()[0]
+# top-N-per-group idiom as REPO_MAP_TOP_FILES: order the (author, module,
+# touches) rows by touches DESC before the second WITH groups by author, so
+# collect(m.name)[0] is genuinely that author's most-touched module.
+TEAM_TOPOLOGY_PRIMARY_MODULE = """
+UNWIND $emails AS email
+MATCH (a:Author {email: email})-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(f:File)-[:BELONGS_TO]->(m:Module)
+WITH a, m, count(DISTINCT c) AS touches
+ORDER BY touches DESC
+WITH a, collect(m.name)[0] AS primary_module
+RETURN a.email AS email, primary_module
+"""
+
+# Two authors are an edge here if they've both done real work (>= $min_touches
+# commits) in the same module -- a coarser, team-shaped relationship than
+# AUTHOR_NETWORK's shared-*file* edges. Starts from the small, filterable set
+# of modules (same "start from what's small and fan out" shape used
+# throughout this file) rather than an author x author cartesian: for each
+# module, collect its qualifying authors (among the selected set only), then
+# pair up within that module's own (small) author list. A pair sharing
+# several modules produces one row per shared module, so RETURN's implicit
+# grouping on (email_a, email_b) via count(*) is exactly "how many modules
+# this pair has in common" -- the edge weight.
+TEAM_TOPOLOGY_SHARED_MODULES = """
+MATCH (a:Author)-[:AUTHORED]->(c:Commit)-[:MODIFIED]->(f:File)-[:BELONGS_TO]->(m:Module)
+WHERE a.email IN $emails
+WITH m, a, count(DISTINCT c) AS touches
+WHERE touches >= $min_touches
+WITH m, collect(a.email) AS emails
+WHERE size(emails) >= 2
+UNWIND emails AS email_a
+UNWIND emails AS email_b
+WITH email_a, email_b
+WHERE email_a < email_b
+WITH email_a, email_b, count(*) AS shared_modules
+ORDER BY shared_modules DESC
+LIMIT $limit
+RETURN email_a, email_b, shared_modules
+"""
+
+# ---------------------------------------------------------------------------
 # Read: modules
 # ---------------------------------------------------------------------------
 

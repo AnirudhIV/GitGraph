@@ -1,9 +1,20 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, fileHref } from "../api/client";
+import { api, authorHref, fileHref } from "../api/client";
+import { GraphLegend } from "../components/GraphLegend";
+import { GraphView } from "../components/GraphView";
+import { moduleColorVar } from "../components/ModuleChip";
 import { EmptyState, ErrorState, LoadingRows } from "../components/StateViews";
 import { useApi } from "../hooks/useApi";
-import type { AuthorSummary } from "../api/types";
+import type { AuthorSummary, GraphNode } from "../api/types";
+
+function topologyColor(n: GraphNode): string {
+  return moduleColorVar(n.group || "unassigned");
+}
+
+function topologyHref(n: GraphNode): string {
+  return authorHref(n.id);
+}
 
 function AuthorPicker({
   label,
@@ -59,11 +70,49 @@ export function Collaboration() {
   const path = useApi(
     useCallback(() => (a && b ? api.collabPath(a.email, b.email) : Promise.resolve(null)), [a, b])
   );
+  const topology = useApi(useCallback(() => api.authorTopology(), []));
 
   return (
-    <div>
+    <div className="page-wide page-tight">
       <div className="page-header">
-        <h1 className="page-title">Collaboration path</h1>
+        <h1 className="page-title">Collaboration</h1>
+        <p className="page-subtitle">
+          Trace a path between two specific people, or see the whole team's shape at once below.
+        </p>
+      </div>
+
+      <div className="card card-pad" style={{ marginBottom: 20 }}>
+        <h2 className="section-title">Team topology</h2>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px" }}>
+          The most active contributors, clustered by which module they mostly work in. Two people connect when
+          they've both done real work in the same module — tight same-colored clusters are natural sub-teams;
+          someone bridging different colors works across boundaries.
+        </p>
+        {topology.loading && <LoadingRows rows={8} height={40} />}
+        {topology.error && <ErrorState error={topology.error} onRetry={topology.reload} />}
+        {topology.data && topology.data.nodes.length === 0 && (
+          <EmptyState title="Not enough activity to map" subtitle="Track a repo with more contributor history." />
+        )}
+        {topology.data && topology.data.nodes.length > 0 && (
+          <>
+            <GraphView
+              nodes={topology.data.nodes}
+              edges={topology.data.edges}
+              height={560}
+              colorForNode={topologyColor}
+              hrefForNode={topologyHref}
+            />
+            <GraphLegend
+              items={[{ color: ["var(--cat-1)", "var(--cat-3)", "var(--cat-5)"], label: "colored by primary module" }]}
+            />
+          </>
+        )}
+      </div>
+
+      <div className="page-header">
+        <h2 className="page-title" style={{ fontSize: 17 }}>
+          Collaboration path
+        </h2>
         <p className="page-subtitle">
           Find the shortest chain of shared files connecting two authors — a direct shared file, or one shared
           bridge author, resolved as a directed graph traversal anchored on the two people you pick.

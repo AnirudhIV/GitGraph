@@ -7,6 +7,7 @@ from app.schemas import (
     AuthorFileOut,
     AuthorNetworkOut,
     AuthorSummaryOut,
+    AuthorTopologyOut,
     CollabPathOut,
     CollabPathStepOut,
     GraphEdge,
@@ -125,6 +126,56 @@ def author_network(email: str, min_shared: int = Query(1, ge=1), limit: int = Qu
             for r in at_risk_rows
         ],
     )
+
+
+@router.get("/authors/topology", response_model=AuthorTopologyOut)
+def author_topology(
+    top_n: int = Query(40, ge=5, le=100),
+    min_touches: int = Query(8, ge=1, description="Commits in a module before it counts as real work there, not a drive-by"),
+    edge_limit: int = Query(120, ge=1, le=400),
+):
+    """Unanchored team topology: the top-N active authors, clustered by
+    which module they mostly work in -- a coarser, team-shaped relationship
+    than author_network's per-file shared-file edges. Bounded to the
+    already-selected active-author set for both queries (see the comments
+    above TEAM_TOPOLOGY_PRIMARY_MODULE/SHARED_MODULES), same "select nodes
+    first, compute relationships only among those" shape as the repo map.
+
+    min_touches/edge_limit both exist to keep this readable as clusters
+    rather than a hairball: a low touches floor means almost every active
+    contributor has *some* activity in a broad module like "docs", which
+    left unfiltered produces a near-complete graph (every pair connected)
+    that a force layout can't meaningfully separate.
+    """
+    active = run_query(queries.AUTHOR_LIST_PRECOMPUTED, {"limit": top_n, "offset": 0})
+    if not active:
+        return AuthorTopologyOut(nodes=[], edges=[])
+    emails = [a["email"] for a in active]
+    name_by_email = {a["email"]: a["name"] for a in active}
+    max_commits = max((a["commit_count"] for a in active), default=1) or 1
+
+    primary_by_email = {
+        r["email"]: r["primary_module"] or ""
+        for r in run_query(queries.TEAM_TOPOLOGY_PRIMARY_MODULE, {"emails": emails})
+    }
+    shared_rows = run_query(
+        queries.TEAM_TOPOLOGY_SHARED_MODULES, {"emails": emails, "min_touches": min_touches, "limit": edge_limit}
+    )
+
+    nodes = [
+        GraphNode(
+            id=a["email"],
+            kind="Author",
+            label=name_by_email[a["email"]],
+            subtitle=f"{name_by_email[a['email']]} - mostly works in {primary_by_email.get(a['email']) or 'no single module'}",
+            hop=1,
+            weight=round(a["commit_count"] / max_commits, 3),
+            group=primary_by_email.get(a["email"], ""),
+        )
+        for a in active
+    ]
+    edges = [GraphEdge(source=r["email_a"], target=r["email_b"], weight=r["shared_modules"]) for r in shared_rows]
+    return AuthorTopologyOut(nodes=nodes, edges=edges)
 
 
 @router.get("/authors/{email}", response_model=AuthorDetailOut)
