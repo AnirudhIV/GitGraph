@@ -9,7 +9,7 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { authorHref, fileHref } from "../api/client";
 import type { GraphEdge as ApiEdge, GraphNode as ApiNode } from "../api/types";
@@ -233,6 +233,22 @@ export function GraphView({
     return () => ro.disconnect();
   }, []);
 
+  // React's onWheel JSX prop attaches wheel listeners as passive (since
+  // React 17, for scroll performance), which silently ignores
+  // preventDefault() inside them -- the page scrolls right along with the
+  // graph zoom regardless of calling it. Attaching natively with
+  // { passive: false } is the only way to actually stop that.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      setView((v) => ({ ...v, scale: Math.min(2.4, Math.max(0.4, v.scale - e.deltaY * 0.001)) }));
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
   useEffect(() => {
     if (!width || !height || nodes.length === 0) {
       setSimNodes([]);
@@ -387,11 +403,6 @@ export function GraphView({
     setHoveredId(null);
   }
 
-  function onWheel(e: RWheelEvent) {
-    e.preventDefault();
-    setView((v) => ({ ...v, scale: Math.min(2.4, Math.max(0.4, v.scale - e.deltaY * 0.001)) }));
-  }
-
   if (!nodes.length) return null;
 
   return (
@@ -407,7 +418,6 @@ export function GraphView({
         touchAction: "none",
         cursor: "grab",
       }}
-      onWheel={onWheel}
       onPointerDown={onContainerPointerDown}
       onPointerMove={onContainerPointerMove}
       onPointerUp={onContainerPointerUp}
