@@ -84,7 +84,9 @@ export function FileDetail() {
             {blast.data && blast.data.nodes.length <= 1 && (
               <EmptyState title="No coupling detected" subtitle="This file hasn't reliably co-changed with others." />
             )}
-            {blast.data && blast.data.nodes.length > 1 && <GraphView nodes={blast.data.nodes} edges={blast.data.edges} />}
+            {blast.data && blast.data.nodes.length > 1 && (
+              <GraphView nodes={blast.data.nodes} edges={blast.data.edges} />
+            )}
           </div>
 
           <div className="grid grid-2">

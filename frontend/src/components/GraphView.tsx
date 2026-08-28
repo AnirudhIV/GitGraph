@@ -20,9 +20,9 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
 }
 
 // Mind-map look: vivid flat bubbles per hop tier with labels set inside the
-// bubble instead of below it. Canvas matches the app's own surface color
-// (theme-aware) rather than a fixed dark backdrop.
-const CANVAS_BG = "var(--surface-raised)";
+// bubble instead of below it. The canvas itself is always transparent, so
+// it blends into whatever card/page it's placed on rather than showing its
+// own background.
 const HOP_COLOR: Record<number, string> = { 0: "#f2c14e", 1: "var(--cat-1)", 2: "#238636" };
 const HOP_TEXT_ON_FILL = "#16202f";
 const HOP_LABEL: Record<number, string> = { 0: "selected", 1: "direct", 2: "2nd-degree" };
@@ -174,7 +174,6 @@ export function GraphView({
   edges,
   height = 460,
   navigable = true,
-  transparent = false,
   colorForNode,
   hrefForNode,
 }: {
@@ -182,7 +181,6 @@ export function GraphView({
   edges: ApiEdge[];
   height?: number;
   navigable?: boolean;
-  transparent?: boolean;
   // Overrides today's hop-tier color (File/Author blast-radius & collab
   // views) for graphs with a different node kind (Module, etc). Omit to
   // keep the default hop-tier look untouched.
@@ -385,7 +383,7 @@ export function GraphView({
         position: "relative",
         overflow: "hidden",
         borderRadius: "var(--radius-md)",
-        background: transparent ? "transparent" : CANVAS_BG,
+        background: "transparent",
         touchAction: "none",
         cursor: "grab",
       }}
@@ -475,7 +473,7 @@ export function GraphView({
                 >
                   <circle
                     r={r}
-                    fill={isHub ? (transparent ? "transparent" : CANVAS_BG) : color}
+                    fill={isHub ? "transparent" : color}
                     stroke={color}
                     strokeWidth={isHub ? 2.5 : 1.5}
                   />

@@ -69,7 +69,6 @@ export function Modules() {
               <GraphView
                 nodes={graph.data.nodes}
                 edges={graph.data.edges}
-                transparent
                 colorForNode={(n: GraphNode) => moduleColorVar(n.id)}
                 hrefForNode={(n: GraphNode) => moduleHref(n.id)}
               />

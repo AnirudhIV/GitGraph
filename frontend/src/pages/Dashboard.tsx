@@ -74,8 +74,8 @@ export function Dashboard() {
           </div>
           <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
             {scoreMode === "all-time"
-              ? "Ranked by commit churn × coupling fan-out ÷ bus factor — files that change often, drag other files along with them, and are known to few people."
-              : "Same formula, but commits and coupling are exponentially decayed by age — a coupling pattern from years ago barely counts, so this surfaces files that are hot right now, not just historically."}
+              ? "Risk is one score built from three signals mined straight from the commit log: how often a file changes (churn), how many other files tend to change alongside it (coupling fan-out — its blast radius), and how few people actually understand it (bus factor, the inverse of author count). High churn, wide fan-out, and a thin bus factor push a file's score up. This is the same risk score used everywhere else in the app where a file gets colored by severity, such as the repo map."
+              : "Same three signals, same formula — but commits and coupling are exponentially decayed by age, so a coupling pattern from years ago barely counts. This surfaces files that are hot right now, not just historically."}
           </p>
           {hotspots.loading && <LoadingRows rows={6} />}
           {hotspots.error && <ErrorState error={hotspots.error} onRetry={hotspots.reload} />}

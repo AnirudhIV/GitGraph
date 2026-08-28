@@ -54,7 +54,6 @@ export function RepoMap() {
               nodes={map.data.nodes}
               edges={map.data.edges}
               height={640}
-              transparent
               colorForNode={colorForNode}
               hrefForNode={hrefForNode}
             />

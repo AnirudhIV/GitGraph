@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { GraphView } from "../components/GraphView";
 import { useApi } from "../hooks/useApi";
+import type { GraphEdge, GraphNode } from "../api/types";
 
 const QUESTIONS = [
   {
@@ -42,69 +44,34 @@ const QUESTIONS = [
   },
 ];
 
-// Hand-placed, not force-simulated -- this is a fixed illustration of what
-// the real (interactive, draggable) GraphView produces, e.g. for a file's
-// blast radius. Using a live graph here would tie the landing page to
-// whatever repo happens to be tracked; a fixed sample stays meaningful
-// and legible regardless of instance state.
-const PREVIEW_NODES: { id: string; label: string; hop: 0 | 1 | 2; x: number; y: number }[] = [
-  { id: "root", label: "payments/charge.ts", hop: 0, x: 320, y: 190 },
-  { id: "h1a", label: "payments/webhook.ts", hop: 1, x: 216, y: 130 },
-  { id: "h1b", label: "billing/invoice.ts", hop: 1, x: 442, y: 146 },
-  { id: "h1c", label: "payments/refund.ts", hop: 1, x: 298, y: 313 },
-  { id: "h2a", label: "notifications/email.ts", hop: 2, x: 122, y: 114 },
-  { id: "h2b", label: "queue/worker.ts", hop: 2, x: 200, y: 36 },
-  { id: "h2c", label: "ledger/entry.ts", hop: 2, x: 540, y: 163 },
-  { id: "h2d", label: "api/routes.ts", hop: 2, x: 487, y: 68 },
-  { id: "h2e", label: "tests/payments.test.ts", hop: 2, x: 247, y: 374 },
+// Fixed sample data, not a tracked repo's real blast radius -- using a live
+// graph tied to whatever repo happens to be tracked would make the landing
+// page's meaning depend on instance state. This still renders through the
+// real, interactive GraphView (force layout, drag, zoom, hover) so what you
+// see here is exactly what the app produces, just with `navigable={false}`
+// so a stray click can't route to a file that doesn't exist.
+const PREVIEW_NODES: GraphNode[] = [
+  { id: "root", kind: "File", label: "charge.ts", subtitle: "payments/charge.ts", hop: 0, weight: 2 },
+  { id: "h1a", kind: "File", label: "webhook.ts", subtitle: "payments/webhook.ts", hop: 1, weight: 3 },
+  { id: "h1b", kind: "File", label: "invoice.ts", subtitle: "billing/invoice.ts", hop: 1, weight: 1 },
+  { id: "h1c", kind: "File", label: "refund.ts", subtitle: "payments/refund.ts", hop: 1, weight: 2 },
+  { id: "h2a", kind: "File", label: "email.ts", subtitle: "notifications/email.ts", hop: 2, weight: 1 },
+  { id: "h2b", kind: "File", label: "worker.ts", subtitle: "queue/worker.ts", hop: 2, weight: 0 },
+  { id: "h2c", kind: "File", label: "entry.ts", subtitle: "ledger/entry.ts", hop: 2, weight: 1 },
+  { id: "h2d", kind: "File", label: "routes.ts", subtitle: "api/routes.ts", hop: 2, weight: 0 },
+  { id: "h2e", kind: "File", label: "payments.test.ts", subtitle: "tests/payments.test.ts", hop: 2, weight: 1 },
 ];
 
-const PREVIEW_EDGES: [string, string][] = [
-  ["root", "h1a"],
-  ["root", "h1b"],
-  ["root", "h1c"],
-  ["h1a", "h2a"],
-  ["h1a", "h2b"],
-  ["h1b", "h2c"],
-  ["h1b", "h2d"],
-  ["h1c", "h2e"],
+const PREVIEW_EDGES: GraphEdge[] = [
+  { source: "root", target: "h1a", weight: 6 },
+  { source: "root", target: "h1b", weight: 3 },
+  { source: "root", target: "h1c", weight: 4 },
+  { source: "h1a", target: "h2a", weight: 2 },
+  { source: "h1a", target: "h2b", weight: 1 },
+  { source: "h1b", target: "h2c", weight: 2 },
+  { source: "h1b", target: "h2d", weight: 1 },
+  { source: "h1c", target: "h2e", weight: 2 },
 ];
-
-const PREVIEW_HOP_COLOR: Record<0 | 1 | 2, string> = {
-  0: "var(--seq-600)",
-  1: "var(--seq-450)",
-  2: "var(--seq-300)",
-};
-const PREVIEW_HOP_RADIUS: Record<0 | 1 | 2, number> = { 0: 16, 1: 10, 2: 7 };
-
-function GraphPreview() {
-  const byId = new Map(PREVIEW_NODES.map((n) => [n.id, n]));
-  return (
-    <svg viewBox="0 0 640 410" style={{ width: "100%", height: "auto", display: "block" }}>
-      {PREVIEW_EDGES.map(([a, b]) => {
-        const s = byId.get(a)!;
-        const t = byId.get(b)!;
-        return <line key={`${a}-${b}`} x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="var(--gridline)" strokeWidth={1.5} />;
-      })}
-      {PREVIEW_NODES.map((n) => (
-        <g key={n.id} transform={`translate(${n.x},${n.y})`}>
-          <circle r={PREVIEW_HOP_RADIUS[n.hop]} fill={PREVIEW_HOP_COLOR[n.hop]} stroke="var(--surface-card)" strokeWidth={2} />
-          <text
-            x={0}
-            y={PREVIEW_HOP_RADIUS[n.hop] + 15}
-            textAnchor="middle"
-            fontSize={10.5}
-            fontFamily="var(--font-mono)"
-            fill={n.hop === 0 ? "var(--text-primary)" : "var(--text-secondary)"}
-            fontWeight={n.hop === 0 ? 600 : 400}
-          >
-            {n.label}
-          </text>
-        </g>
-      ))}
-    </svg>
-  );
-}
 
 const ENGINEERING_NOTES = [
   {
@@ -228,18 +195,11 @@ export function Home() {
         </div>
       </section>
 
-      <section style={{ maxWidth: 900, margin: "64px auto 0", padding: "0 24px" }}>
-        <div className="card card-pad" style={{ background: "var(--surface-raised)" }}>
-          <GraphPreview />
-        </div>
-        <div style={{ display: "flex", justifyContent: "center", gap: 22, flexWrap: "wrap", marginTop: 14 }}>
-          <Legend color="var(--seq-600)" text="the file you're touching" />
-          <Legend color="var(--seq-450)" text="changes with it directly" />
-          <Legend color="var(--seq-300)" text="two hops out" />
-        </div>
-        <p style={{ textAlign: "center", fontSize: 12.5, color: "var(--text-muted)", margin: "10px auto 0", maxWidth: "52ch" }}>
-          A blast radius, as GitGraph draws it — every graph in the app is this same interactive view (drag nodes,
-          scroll to zoom, click through) over different node types.
+      <section style={{ maxWidth: 1040, margin: "64px auto 0", padding: "0 24px" }}>
+        <GraphView nodes={PREVIEW_NODES} edges={PREVIEW_EDGES} navigable={false} height={560} />
+        <p style={{ textAlign: "center", fontSize: 12.5, color: "var(--text-muted)", margin: "14px auto 0", maxWidth: "52ch" }}>
+          A blast radius, live — drag nodes, scroll to zoom. This is sample data; every graph in the real app is
+          this same interactive view over your own repo's history.
         </p>
       </section>
 
@@ -413,14 +373,6 @@ export function Home() {
   );
 }
 
-function Legend({ color, text }: { color: string; text: string }) {
-  return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-secondary)" }}>
-      <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flex: "none" }} />
-      {text}
-    </div>
-  );
-}
 
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
