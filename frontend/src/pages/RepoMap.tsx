@@ -8,8 +8,17 @@ import type { GraphNode } from "../api/types";
 
 const SOLE_OWNED_RING = "var(--cat-7)";
 
+// --status-critical reads as a soft, pinkish red -- fine as a small text
+// label elsewhere, but too washed out to read as "highest severity" on a
+// bubble that's also competing with the warning/good tiers on this graph.
+// A local, more saturated red just for this graph's top tier, rather than
+// changing --status-critical itself and shifting every other page that
+// reuses it (Dashboard, Files, FileDetail) for a look that only this graph
+// wanted.
+const HIGH_RISK_RED = "#e5342b";
+
 const LEGEND_ITEMS = [
-  { color: "var(--status-critical)", label: "high risk" },
+  { color: HIGH_RISK_RED, label: "high risk" },
   { color: "var(--status-warning)", label: "medium risk" },
   { color: "var(--status-good)", label: "low risk" },
   { color: SOLE_OWNED_RING, label: "ring = sole-owned (bus factor 1)" },
@@ -20,9 +29,10 @@ const LEGEND_ITEMS = [
 // files (see backend/app/routers/repo.py::get_repo_map). Dashboard's 4-tier
 // riskTier() reads great as a text list, but a graph this dense is easier
 // to scan with fewer distinct hues -- 3 bands instead, same --status-*
-// tokens (reusing the app's severity ramp, not inventing new colors).
+// tokens (reusing the app's severity ramp, not inventing new colors) except
+// for the top tier -- see HIGH_RISK_RED above.
 function colorForNode(n: GraphNode): string {
-  if (n.weight >= 0.66) return "var(--status-critical)";
+  if (n.weight >= 0.66) return HIGH_RISK_RED;
   if (n.weight >= 0.33) return "var(--status-warning)";
   return "var(--status-good)";
 }
