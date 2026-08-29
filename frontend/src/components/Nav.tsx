@@ -6,6 +6,7 @@ const LINKS = [
   { to: "/repo-map", label: "Repo Map" },
   { to: "/files", label: "Files" },
   { to: "/authors", label: "Authors" },
+  { to: "/criticality", label: "Criticality" },
   { to: "/modules", label: "Modules" },
   { to: "/collaboration", label: "Collaboration" },
 ];

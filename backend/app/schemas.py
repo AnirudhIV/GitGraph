@@ -126,6 +126,16 @@ class AuthorDetailOut(AuthorSummaryOut):
     top_modules: list[dict]
 
 
+class AuthorCriticalityOut(BaseModel):
+    email: str
+    name: str
+    criticality_score: float
+    sole_owned_file_count: int
+    # Computed at request time from last_commit_at, not stored -- see the
+    # comment above Settings.author_stale_after_days in config.py.
+    is_stale: bool
+
+
 class SuccessionFileOut(BaseModel):
     path: str
     module: str

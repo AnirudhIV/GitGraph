@@ -115,6 +115,31 @@ def precompute_author_stats() -> None:
     db.run_write(queries.PRECOMPUTE_AUTHOR_STATS)
 
 
+def precompute_author_criticality(
+    concentration_threshold: float | None = None,
+    sole_ownership_boost: float | None = None,
+    sole_ownership_baseline: float | None = None,
+) -> None:
+    """Compute and store criticality_score/sole_owned_file_count on every
+    qualifying Author node -- same write-once-read-many reasoning as
+    precompute_hotspots. Must run after precompute_hotspots(): the formula
+    reads File.risk_score off already-written nodes rather than
+    recomputing it."""
+    settings = get_settings()
+    if concentration_threshold is None:
+        concentration_threshold = settings.author_criticality_concentration_threshold
+    if sole_ownership_boost is None:
+        sole_ownership_boost = settings.author_criticality_sole_ownership_boost
+    if sole_ownership_baseline is None:
+        sole_ownership_baseline = settings.author_criticality_sole_ownership_baseline
+    params = {
+        "concentration_threshold": concentration_threshold,
+        "sole_ownership_boost": sole_ownership_boost,
+        "sole_ownership_baseline": sole_ownership_baseline,
+    }
+    db.run_write(queries.PRECOMPUTE_AUTHOR_CRITICALITY, params)
+
+
 def precompute_module_coupling(
     min_count: int = queries.MODULE_COUPLING_DEFAULT_MIN_COUNT,
     max_files_per_commit: int = queries.MODULE_COUPLING_DEFAULT_MAX_FILES_PER_COMMIT,
@@ -226,6 +251,8 @@ def run_ingest(
     precompute_hotspots()
     report("Precomputing author stats...")
     precompute_author_stats()
+    report("Precomputing author criticality...")
+    precompute_author_criticality()
     report("Precomputing module coupling...")
     precompute_module_coupling()
     report(f"Loaded graph in {time.time() - load_start:.1f}s.")

@@ -6,6 +6,7 @@ import { useApi } from "./hooks/useApi";
 import { AuthorDetail } from "./pages/AuthorDetail";
 import { Authors } from "./pages/Authors";
 import { Collaboration } from "./pages/Collaboration";
+import { Criticality } from "./pages/Criticality";
 import { Dashboard } from "./pages/Dashboard";
 import { FileDetail } from "./pages/FileDetail";
 import { Files } from "./pages/Files";
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/files/*" element={<FileDetail />} />
         <Route path="/authors" element={<Authors />} />
         <Route path="/authors/:email" element={<AuthorDetail />} />
+        <Route path="/criticality" element={<Criticality />} />
         <Route path="/modules" element={<Modules />} />
         <Route path="/collaboration" element={<Collaboration />} />
         <Route path="/search" element={<Search />} />

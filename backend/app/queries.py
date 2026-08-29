@@ -479,6 +479,69 @@ ORDER BY a.commit_count DESC
 SKIP $offset LIMIT $limit
 """
 
+# Author criticality: a per-author bus-factor number, generalizing
+# AUTHOR_SOLE_OWNED_FILES's binary "does this author solely own the file"
+# check into a continuous ownership-share measure. For each (author, file)
+# pair, share = this author's commits on the file / the file's total
+# commits; a file only counts toward the score once that share clears
+# $concentration_threshold (below that, no single author is concentrated
+# enough on it to matter).
+#
+# Each qualifying file contributes two additive terms, not one:
+#   1. risk_score * share * boost -- the churn/coupling-driven term.
+#      risk_score is read straight off the File node (PRECOMPUTE_HOTSPOTS_*
+#      already wrote it), coalesced to 0 for a file that never cleared the
+#      hotspot gate (>=8 commits + real coupling) rather than letting a
+#      null collapse the whole sum. boost applies only at share == 1.0
+#      (true sole ownership, not just "does most of the work").
+#   2. $sole_ownership_baseline, added flat whenever share == 1.0,
+#      independent of risk_score. Without this, a stable, rarely-touched-
+#      but-important file a single person solely owns -- exactly the kind
+#      that's *least* likely to ever clear the hotspot gate, since it by
+#      nature has low churn and rarely co-changes with anything -- silently
+#      contributed 0. That's backwards: knowledge concentration on a file
+#      is a real risk independent of how often the file happens to churn,
+#      and this app has no independent "importance" signal to weight it by
+#      (no import graph, no call graph -- only git history), so a flat
+#      per-file floor is the honest choice over pretending a churn-based
+#      proxy could tell "quiet because stable" from "quiet because nobody
+#      needs it."
+#
+# sole_owned_file_count is tracked alongside the score, not folded into it,
+# for display as its own flag (same split GraphNode.sole_owned/
+# trending_worse already use). Single pass over the whole repo, not one
+# query per author -- same shape as HOTSPOTS_SIMPLE/ROLLUP -- so this is
+# write-once-read-many too (see seed/load.py::precompute_author_criticality).
+PRECOMPUTE_AUTHOR_CRITICALITY = """
+MATCH (f:File {is_deleted: false})<-[:MODIFIED]-(c:Commit)
+WITH f, count(DISTINCT c) AS total_commits
+MATCH (f)<-[:MODIFIED]-(c2:Commit)<-[:AUTHORED]-(a:Author)
+WITH f, total_commits, a, count(DISTINCT c2) AS author_commits
+WITH a, coalesce(f.risk_score, 0.0) AS risk_score, toFloat(author_commits) / total_commits AS share
+WHERE share >= $concentration_threshold
+WITH a, share,
+     (risk_score * share * (CASE WHEN share = 1.0 THEN 1 + $sole_ownership_boost ELSE 1.0 END))
+     + (CASE WHEN share = 1.0 THEN $sole_ownership_baseline ELSE 0.0 END) AS contribution
+WITH a,
+     sum(contribution) AS criticality_score,
+     sum(CASE WHEN share = 1.0 THEN 1 ELSE 0 END) AS sole_owned_file_count
+SET a.criticality_score = criticality_score, a.sole_owned_file_count = sole_owned_file_count
+RETURN count(a) AS written
+"""
+
+# Every Author not touched by PRECOMPUTE_AUTHOR_CRITICALITY above (i.e. no
+# file where they're concentrated enough to qualify) keeps
+# criticality_score = null, so this is a plain indexed sort -- same
+# read-side shape as HOTSPOTS_PRECOMPUTED.
+AUTHOR_CRITICALITY_PRECOMPUTED = """
+MATCH (a:Author)
+WHERE a.criticality_score IS NOT NULL
+RETURN a.email AS email, a.name AS name, a.criticality_score AS criticality_score,
+       a.sole_owned_file_count AS sole_owned_file_count, a.last_commit_at AS last_commit_at
+ORDER BY a.criticality_score DESC
+LIMIT $limit
+"""
+
 AUTHOR_LIST = """
 MATCH (a:Author)
 WHERE toLower(a.name) CONTAINS toLower($search)

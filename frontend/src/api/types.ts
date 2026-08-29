@@ -104,6 +104,14 @@ export interface AuthorSummary {
   last_commit_at: string | null;
 }
 
+export interface AuthorCriticality {
+  email: string;
+  name: string;
+  criticality_score: number;
+  sole_owned_file_count: number;
+  is_stale: boolean;
+}
+
 export interface AuthorFile {
   path: string;
   module: string;

@@ -1,8 +1,12 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app import queries
+from app.config import get_settings
 from app.db import run_query
 from app.schemas import (
+    AuthorCriticalityOut,
     AuthorDetailOut,
     AuthorFileOut,
     AuthorNetworkOut,
@@ -181,6 +185,41 @@ def author_topology(
     ]
     edges = [GraphEdge(source=r["email_a"], target=r["email_b"], weight=r["shared_files"]) for r in shared_rows]
     return AuthorTopologyOut(nodes=nodes, edges=edges)
+
+
+@router.get("/authors/criticality", response_model=list[AuthorCriticalityOut])
+def author_criticality(limit: int = Query(20, ge=1, le=100)):
+    """Repo-wide ranking of authors by criticality_score -- a formalized,
+    continuous bus-factor number (see the comment above
+    PRECOMPUTE_AUTHOR_CRITICALITY in app.queries for the exact formula).
+    Precomputed at ingest time, same read shape as GET /hotspots: a plain
+    indexed sort, no traversal per request.
+
+    Distinct from AUTHOR_SOLE_OWNED_FILES / at_risk_files on
+    GET /authors/{email}/network, which stays as-is: that's a per-file list
+    scoped to one already-known author, not a repo-wide ranking of who's
+    most critical in the first place.
+    """
+    settings = get_settings()
+    stale_cutoff_days = settings.author_stale_after_days
+    rows = run_query(queries.AUTHOR_CRITICALITY_PRECOMPUTED, {"limit": limit})
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in rows:
+        is_stale = False
+        if r["last_commit_at"]:
+            last_commit = datetime.fromisoformat(r["last_commit_at"])
+            is_stale = (now - last_commit).days > stale_cutoff_days
+        out.append(
+            AuthorCriticalityOut(
+                email=r["email"],
+                name=r["name"],
+                criticality_score=round(r["criticality_score"], 3),
+                sole_owned_file_count=r["sole_owned_file_count"],
+                is_stale=is_stale,
+            )
+        )
+    return out
 
 
 @router.get("/authors/{email}", response_model=AuthorDetailOut)

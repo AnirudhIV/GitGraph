@@ -1,4 +1,5 @@
 import type {
+  AuthorCriticality,
   AuthorDetail,
   AuthorNetwork,
   AuthorSummary,
@@ -114,6 +115,7 @@ export const api = {
     }),
 
   authors: (search = "", limit = 40) => request<AuthorSummary[]>("/api/authors", { search, limit }),
+  authorCriticality: (limit = 20) => request<AuthorCriticality[]>("/api/authors/criticality", { limit }),
   author: (email: string) => request<AuthorDetail>(`/api/authors/${encodeURIComponent(email)}`),
   collabPath: (emailA: string, emailB: string) =>
     request<CollabPath>("/api/authors/path", { email_a: emailA, email_b: emailB }),
