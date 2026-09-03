@@ -97,6 +97,10 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     weight: float
+    # Only meaningful for structurally-derived edges (function call graph --
+    # see FunctionSummaryOut et al.); every git-mined edge (coupling,
+    # collaboration, ...) has no notion of confidence and keeps the default.
+    confidence: str = "high"
 
 
 class BlastRadiusOut(BaseModel):
@@ -194,3 +198,67 @@ class SearchResultOut(BaseModel):
     files: list[FileSummaryOut]
     authors: list[AuthorSummaryOut]
     commits: list[RecentCommitOut]
+
+
+# ---------------------------------------------------------------------------
+# Function-level call graph -- structurally derived from static source
+# parsing (backend/seed/parse/), not from git history. A distinct graph from
+# everything above: Function/CALLS/IMPORTS never appear in a File/Module/
+# Author/Commit response, and vice versa. See README for why.
+# ---------------------------------------------------------------------------
+
+
+class FunctionSummaryOut(BaseModel):
+    id: str
+    name: str
+    qualname: str
+    path: str
+    language: str
+    start_line: int
+    end_line: int
+    is_exported: bool
+    is_method: bool
+
+
+class FunctionCallOut(BaseModel):
+    id: str
+    name: str
+    path: str
+    confidence: str
+    call_count: int
+
+
+class FunctionDetailOut(FunctionSummaryOut):
+    source: str
+    callers: list[FunctionCallOut]
+    callees: list[FunctionCallOut]
+
+
+class CallGraphOut(BaseModel):
+    root: str
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    truncated: bool
+
+
+class FileCallGraphOut(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
+class FunctionListItemOut(FunctionSummaryOut):
+    caller_count: int
+    callee_count: int
+    # change_count: distinct commits whose diff touched a line inside this
+    # function's current range (seed/mine_git.py::mine_function_change_counts) --
+    # real per-function churn, not the file's own commit_count. risk_score:
+    # log1p(change_count) * log1p(caller_count) -- see seed/load.py for why
+    # multiplicative (needs to be both frequently changed *and* widely
+    # depended-on to score high, not either alone).
+    change_count: int
+    risk_score: float
+
+
+class FunctionMapOut(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]

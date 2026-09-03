@@ -10,6 +10,8 @@ import { Criticality } from "./pages/Criticality";
 import { Dashboard } from "./pages/Dashboard";
 import { FileDetail } from "./pages/FileDetail";
 import { Files } from "./pages/Files";
+import { FunctionDetail } from "./pages/FunctionDetail";
+import { Functions } from "./pages/Functions";
 import { Home } from "./pages/Home";
 import { Landing } from "./pages/Landing";
 import { Modules } from "./pages/Modules";
@@ -47,6 +49,8 @@ export default function App() {
         <Route path="/repo-map" element={<RepoMap />} />
         <Route path="/files" element={<Files />} />
         <Route path="/files/*" element={<FileDetail />} />
+        <Route path="/functions" element={<Functions />} />
+        <Route path="/functions/:id" element={<FunctionDetail />} />
         <Route path="/authors" element={<Authors />} />
         <Route path="/authors/:email" element={<AuthorDetail />} />
         <Route path="/criticality" element={<Criticality />} />

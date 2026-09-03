@@ -13,10 +13,23 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT commit_hash IF NOT EXISTS FOR (c:Commit) REQUIRE c.hash IS UNIQUE",
     "CREATE CONSTRAINT file_path IF NOT EXISTS FOR (f:File) REQUIRE f.path IS UNIQUE",
     "CREATE CONSTRAINT module_name IF NOT EXISTS FOR (m:Module) REQUIRE m.name IS UNIQUE",
+    "CREATE CONSTRAINT function_id IF NOT EXISTS FOR (fn:Function) REQUIRE fn.id IS UNIQUE",
 ]
 
 WIPE_BATCH = """
 MATCH (n)
+WITH n LIMIT $batch_size
+DETACH DELETE n
+RETURN count(n) AS deleted
+"""
+
+# Scoped wipe of just the function/call-graph subgraph, run unconditionally
+# at the start of every ingest (independent of the top-level --clear flag) --
+# see seed/parse/__init__.py for why this side of the graph is always fully
+# re-derived from the current working tree rather than accumulated like the
+# git-history side.
+WIPE_FUNCTIONS_BATCH = """
+MATCH (n:Function)
 WITH n LIMIT $batch_size
 DETACH DELETE n
 RETURN count(n) AS deleted
@@ -92,6 +105,48 @@ UNWIND $paths AS p
 MATCH (f:File {path: p})
 SET f.is_deleted = true
 RETURN count(f) AS updated
+"""
+
+# Functions are only ever parsed out of files already in the mined file
+# list (see seed/parse/__init__.py::parse_repo's caller in seed/load.py),
+# and load_files() has already run by the time this executes -- so a plain
+# MATCH is correct here, not a defensive MERGE: every fn.path is guaranteed
+# to already have a File node.
+LOAD_FUNCTIONS_BATCH = """
+UNWIND $functions AS fn
+MATCH (file:File {path: fn.path})
+MERGE (func:Function {id: fn.id})
+SET func.path = fn.path, func.name = fn.name, func.qualname = fn.qualname, func.language = fn.language,
+    func.start_line = fn.start_line, func.end_line = fn.end_line, func.is_exported = fn.is_exported,
+    func.is_method = fn.is_method, func.source = fn.source, func.change_count = fn.change_count,
+    func.risk_score = fn.risk_score, func.complexity = fn.complexity
+MERGE (func)-[:DEFINED_IN]->(file)
+RETURN count(*) AS written
+"""
+
+# One CALLS edge per distinct (caller, callee) pair, deduped/aggregated in
+# Python before this write (same idiom as mine_git.py::rename_pairs) -- see
+# seed/parse/__init__.py for how call_count/call_lines/confidence are
+# rolled up across multiple call sites between the same pair.
+LOAD_CALLS_BATCH = """
+UNWIND $calls AS c
+MATCH (caller:Function {id: c.caller_id})
+MATCH (callee:Function {id: c.callee_id})
+MERGE (caller)-[r:CALLS]->(callee)
+SET r.confidence = c.confidence, r.resolution = c.resolution, r.call_count = c.call_count, r.call_lines = c.call_lines
+RETURN count(*) AS written
+"""
+
+# Only ever written for imports resolved to an in-repo file -- an
+# unresolved/dynamic/external import is dropped in Python before it gets
+# here, not stored with a null target.
+LOAD_IMPORTS_BATCH = """
+UNWIND $imports AS i
+MATCH (from_file:File {path: i.from_path})
+MATCH (to_file:File {path: i.to_path})
+MERGE (from_file)-[r:IMPORTS]->(to_file)
+SET r.imported_names = i.imported_names
+RETURN count(*) AS written
 """
 
 # ---------------------------------------------------------------------------
@@ -902,4 +957,174 @@ RETURN c.hash AS hash, c.message AS message, a.name AS author_name, c.timestamp 
        c.additions AS additions, c.deletions AS deletions
 ORDER BY c.timestamp DESC
 LIMIT $limit
+"""
+
+# ---------------------------------------------------------------------------
+# Read: function-level call graph (structural, from static source parsing --
+# see backend/seed/parse/. A separate graph from every query above: none of
+# these ever touch Author/Commit/File-coupling data, and vice versa.)
+# ---------------------------------------------------------------------------
+
+FUNCTIONS_FOR_FILE = """
+MATCH (fn:Function {path: $path})
+RETURN fn.id AS id, fn.name AS name, fn.qualname AS qualname, fn.path AS path, fn.language AS language,
+       fn.start_line AS start_line, fn.end_line AS end_line, fn.is_exported AS is_exported, fn.is_method AS is_method
+ORDER BY fn.start_line
+"""
+
+# Same rows as FUNCTIONS_FOR_FILE plus caller/callee fan counts -- kept as
+# its own query rather than folding the aggregation into FUNCTIONS_FOR_FILE
+# itself, since file_call_graph (below) uses that one purely for node ids/
+# labels and has no use for the extra CALLS traversal cost. Ranked by
+# caller_count so a file's function list reads as an importance ranking,
+# same as FUNCTIONS_LIST does repo-wide on the Functions page.
+FUNCTIONS_FOR_FILE_WITH_COUNTS = """
+MATCH (fn:Function {path: $path})
+OPTIONAL MATCH (fn)<-[:CALLS]-(caller:Function)
+WITH fn, count(DISTINCT caller) AS caller_count
+OPTIONAL MATCH (fn)-[:CALLS]->(callee:Function)
+WITH fn, caller_count, count(DISTINCT callee) AS callee_count
+RETURN fn.id AS id, fn.name AS name, fn.qualname AS qualname, fn.path AS path, fn.language AS language,
+       fn.start_line AS start_line, fn.end_line AS end_line, fn.is_exported AS is_exported, fn.is_method AS is_method,
+       caller_count, callee_count, coalesce(fn.change_count, 0) AS change_count, coalesce(fn.risk_score, 0.0) AS risk_score
+ORDER BY caller_count DESC, fn.start_line
+"""
+
+# Repo-wide function browser (the Functions page's list half) -- caller/
+# callee fan counts are aggregated live (cheap: bounded to $limit rows
+# post-aggregation, and Function/CALLS graphs are orders of magnitude
+# smaller than the git-history graph). change_count/risk_score, by
+# contrast, are precomputed at ingest time (seed/load.py, right after
+# parsing -- see mine_git.py::mine_function_change_counts) since they need
+# a `git log` walk per file, not something a live Cypher aggregation could
+# produce; coalesced to 0 for the (should-not-happen post-reingest, but
+# cheap to guard) case of a Function node written before that existed.
+FUNCTIONS_LIST = """
+MATCH (fn:Function)
+WHERE toLower(fn.qualname) CONTAINS toLower($q) OR toLower(fn.path) CONTAINS toLower($q)
+OPTIONAL MATCH (fn)<-[:CALLS]-(caller:Function)
+WITH fn, count(DISTINCT caller) AS caller_count
+OPTIONAL MATCH (fn)-[:CALLS]->(callee:Function)
+WITH fn, caller_count, count(DISTINCT callee) AS callee_count
+RETURN fn.id AS id, fn.name AS name, fn.qualname AS qualname, fn.path AS path, fn.language AS language,
+       fn.start_line AS start_line, fn.end_line AS end_line, fn.is_exported AS is_exported, fn.is_method AS is_method,
+       caller_count, callee_count, coalesce(fn.change_count, 0) AS change_count, coalesce(fn.risk_score, 0.0) AS risk_score
+ORDER BY caller_count DESC, fn.qualname
+LIMIT $limit
+"""
+
+# Same rows as FUNCTIONS_LIST, ranked by the combined change-count x
+# caller-count risk score instead -- kept as its own query rather than a
+# dynamic ORDER BY, same idiom as SEARCH_FILES_BY_RISK next to SEARCH_FILES.
+FUNCTIONS_LIST_BY_RISK = """
+MATCH (fn:Function)
+WHERE toLower(fn.qualname) CONTAINS toLower($q) OR toLower(fn.path) CONTAINS toLower($q)
+OPTIONAL MATCH (fn)<-[:CALLS]-(caller:Function)
+WITH fn, count(DISTINCT caller) AS caller_count
+OPTIONAL MATCH (fn)-[:CALLS]->(callee:Function)
+WITH fn, caller_count, count(DISTINCT callee) AS callee_count
+RETURN fn.id AS id, fn.name AS name, fn.qualname AS qualname, fn.path AS path, fn.language AS language,
+       fn.start_line AS start_line, fn.end_line AS end_line, fn.is_exported AS is_exported, fn.is_method AS is_method,
+       caller_count, callee_count, coalesce(fn.change_count, 0) AS change_count, coalesce(fn.risk_score, 0.0) AS risk_score
+ORDER BY risk_score DESC, fn.qualname
+LIMIT $limit
+"""
+
+# Repo-wide function graph (the Functions page's graph half) -- same two-
+# query shape as get_repo_map: pick a bounded, ranked candidate set first
+# (here: most-called functions, MATCH rather than OPTIONAL MATCH so a
+# function nobody calls doesn't clutter an overview graph, same reasoning
+# repo map applies via risk_score), then find edges only among that
+# already-selected set (FUNCTION_MAP_EDGES_AMONG), never the whole graph.
+FUNCTION_MAP_CANDIDATES = """
+MATCH (fn:Function)<-[:CALLS]-(caller:Function)
+WITH fn, count(DISTINCT caller) AS caller_count
+RETURN fn.id AS id, fn.name AS name, fn.qualname AS qualname, fn.path AS path, fn.language AS language, caller_count
+ORDER BY caller_count DESC
+LIMIT $limit
+"""
+
+FUNCTION_MAP_EDGES_AMONG = """
+UNWIND $ids AS fid
+MATCH (a:Function {id: fid})-[r:CALLS]->(b:Function)
+WHERE b.id IN $ids
+RETURN a.id AS source, b.id AS target, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $edge_limit
+"""
+
+FUNCTION_DETAIL = """
+MATCH (fn:Function {id: $id})
+RETURN fn.id AS id, fn.name AS name, fn.qualname AS qualname, fn.path AS path, fn.language AS language,
+       fn.start_line AS start_line, fn.end_line AS end_line, fn.is_exported AS is_exported, fn.is_method AS is_method,
+       fn.source AS source
+"""
+
+FUNCTION_CALLERS = """
+MATCH (caller:Function)-[r:CALLS]->(:Function {id: $id})
+RETURN caller.id AS id, caller.name AS name, caller.path AS path, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $limit
+"""
+
+FUNCTION_CALLEES = """
+MATCH (:Function {id: $id})-[r:CALLS]->(callee:Function)
+RETURN callee.id AS id, callee.name AS name, callee.path AS path, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $limit
+"""
+
+# Rooted call graph around one function, one hop in each direction -- both
+# callers and callees, since CALLS (unlike file coupling) is directed and a
+# function's dependents matter as much as its dependencies. Bounded
+# ORDER BY ... LIMIT fan-out, same idiom as BLAST_RADIUS_DIRECT.
+FUNCTION_CALL_GRAPH_CALLEES_DIRECT = """
+MATCH (fn:Function {id: $id})-[r:CALLS]->(callee:Function)
+RETURN callee.id AS id, callee.name AS name, callee.path AS path, callee.qualname AS qualname,
+       callee.language AS language, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $limit
+"""
+
+FUNCTION_CALL_GRAPH_CALLERS_DIRECT = """
+MATCH (caller:Function)-[r:CALLS]->(fn:Function {id: $id})
+RETURN caller.id AS id, caller.name AS name, caller.path AS path, caller.qualname AS qualname,
+       caller.language AS language, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $limit
+"""
+
+# Second-degree propagation, one direction at a time -- callees of callees,
+# and (separately) callers of callers -- same chained-MATCH-per-hop idiom as
+# BLAST_RADIUS_TRANSITIVE.
+FUNCTION_CALL_GRAPH_CALLEES_TRANSITIVE = """
+MATCH (fn:Function {id: $id})-[:CALLS]->(direct:Function)
+MATCH (direct)-[r:CALLS]->(indirect:Function)
+WHERE indirect.id <> $id AND indirect <> direct
+RETURN direct.id AS via, indirect.id AS id, indirect.name AS name, indirect.path AS path,
+       indirect.qualname AS qualname, indirect.language AS language, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $limit
+"""
+
+FUNCTION_CALL_GRAPH_CALLERS_TRANSITIVE = """
+MATCH (fn:Function {id: $id})<-[:CALLS]-(direct:Function)
+MATCH (direct)<-[r:CALLS]-(indirect:Function)
+WHERE indirect.id <> $id AND indirect <> direct
+RETURN direct.id AS via, indirect.id AS id, indirect.name AS name, indirect.path AS path,
+       indirect.qualname AS qualname, indirect.language AS language, r.confidence AS confidence, r.call_count AS call_count
+ORDER BY r.call_count DESC
+LIMIT $limit
+"""
+
+# Unanchored: every same-file CALLS edge for one file's functions. A
+# cross-file callee is still returned (as a boundary node carrying its own
+# path) so the file's call graph shows "-> other_file.py:name" without
+# pulling in that other file's internals -- modeled on REPO_MAP_COUPLING_
+# AMONG's "start from an already-known candidate set" shape.
+FILE_CALL_GRAPH_EDGES = """
+MATCH (fn:Function {path: $path})-[r:CALLS]->(callee:Function)
+RETURN fn.id AS source, callee.id AS target, callee.path AS target_path, callee.name AS target_name,
+       callee.qualname AS target_qualname, callee.language AS target_language,
+       r.confidence AS confidence, r.call_count AS call_count
 """

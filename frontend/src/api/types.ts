@@ -86,6 +86,10 @@ export interface GraphEdge {
   source: string;
   target: string;
   weight: number;
+  // Always present on real API responses (backend defaults it to "high");
+  // optional here only so hand-authored edges (e.g. Home.tsx's static demo
+  // graph) don't need to set a field that's meaningless for them.
+  confidence?: string;
 }
 
 export interface BlastRadius {
@@ -176,4 +180,62 @@ export interface SearchResult {
   files: FileSummary[];
   authors: AuthorSummary[];
   commits: RecentCommit[];
+}
+
+// Function-level call graph -- structurally derived from static source
+// parsing (backend/seed/parse/), not from git history. A separate graph
+// from everything above: Function/CALLS/IMPORTS never appear in a
+// File/Module/Author/Commit response, and vice versa.
+
+export interface FunctionSummary {
+  id: string;
+  name: string;
+  qualname: string;
+  path: string;
+  language: string;
+  start_line: number;
+  end_line: number;
+  is_exported: boolean;
+  is_method: boolean;
+}
+
+export interface FunctionCall {
+  id: string;
+  name: string;
+  path: string;
+  confidence: string;
+  call_count: number;
+}
+
+export interface FunctionDetail extends FunctionSummary {
+  source: string;
+  callers: FunctionCall[];
+  callees: FunctionCall[];
+}
+
+export interface CallGraph {
+  root: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+}
+
+export interface FileCallGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface FunctionListItem extends FunctionSummary {
+  caller_count: number;
+  callee_count: number;
+  // change_count: distinct commits whose diff touched a line inside this
+  // function's current range -- real per-function churn, not the file's.
+  // risk_score: log1p(change_count) * log1p(caller_count).
+  change_count: number;
+  risk_score: number;
+}
+
+export interface FunctionMap {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }

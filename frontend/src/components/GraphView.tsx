@@ -17,6 +17,7 @@ import type { GraphEdge as ApiEdge, GraphNode as ApiNode } from "../api/types";
 interface SimNode extends SimulationNodeDatum, ApiNode {}
 interface SimLink extends SimulationLinkDatum<SimNode> {
   weight: number;
+  confidence?: string;
 }
 
 // Mind-map look: vivid flat bubbles per hop tier with labels set inside the
@@ -186,6 +187,8 @@ export function GraphView({
   spacingScale = 1,
   clusterSensitivity = 1,
   nearestInTooltip,
+  edgeStyleForLink,
+  directed = false,
 }: {
   nodes: ApiNode[];
   edges: ApiEdge[];
@@ -224,6 +227,21 @@ export function GraphView({
   // person's likely sub-team", which a hover tooltip otherwise can't show
   // since edges alone only capture direct file-sharing pairs.
   nearestInTooltip?: { label: string; count?: number };
+  // Overrides an edge's stroke-dasharray by its own data (e.g. a call
+  // graph's confidence field) -- omit to keep every edge solid (today's
+  // behavior). Same "optional override function" convention as
+  // colorForNode/strokeForNode above, kept separate from those since it
+  // styles edges, not nodes. Takes just {confidence}, not the full edge
+  // shape, since that's all a caller needs and it's what the internal
+  // simulation copy (source/target already resolved to node objects, not
+  // ids) can actually offer.
+  edgeStyleForLink?: (edge: { confidence?: string }) => { dash?: string };
+  // Draws an arrowhead at each edge's target end -- only meaningful for a
+  // directed relationship (e.g. function call graphs: A calls B is not the
+  // same as B calls A). Omit (default false) for symmetric graphs like file
+  // coupling/blast-radius/collaboration, where a line has no direction and
+  // an arrow would misrepresent that.
+  directed?: boolean;
 }) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -275,7 +293,7 @@ export function GraphView({
     const byId = new Map(nodeCopies.map((n) => [n.id, n]));
     const linkCopies: SimLink[] = edges
       .filter((e) => byId.has(e.source) && byId.has(e.target))
-      .map((e) => ({ source: e.source, target: e.target, weight: e.weight }));
+      .map((e) => ({ source: e.source, target: e.target, weight: e.weight, confidence: e.confidence }));
 
     const linkKey = (l: SimLink) => {
       const s = typeof l.source === "object" ? (l.source as SimNode).id : (l.source as unknown as string);
@@ -466,6 +484,19 @@ export function GraphView({
       onPointerLeave={onContainerPointerLeave}
     >
       <svg width="100%" height={height}>
+        {directed && (
+          <defs>
+            {/* Fixed, high-contrast fill rather than fill="context-stroke":
+                that keyword has patchy support, and where it's unsupported
+                the fill falls back to black -- invisible against this
+                app's dark background exactly where it'd matter most. A
+                plain fixed color trades "arrow matches its own edge's
+                color" for "always visible everywhere". */}
+            <marker id="graph-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--text-primary)" />
+            </marker>
+          </defs>
+        )}
         <g transform={`translate(${view.x},${view.y}) scale(${view.scale})`}>
           {simLinks.map((l, i) => {
             const s = typeof l.source === "object" ? l.source : nodeById.get(l.source as unknown as string);
@@ -474,15 +505,25 @@ export function GraphView({
             const relevant = !hoveredId || s.id === hoveredId || t.id === hoveredId;
             const edgeColor = colorForNode ? colorForNode(t) : HOP_COLOR[(t as SimNode).hop] ?? HOP_COLOR[2];
             const curveFactor = (hash01(`${s.id}|${t.id}`) - 0.5) * 0.46;
-            const baseOpacity = Math.min(0.55, 0.18 + Math.min(1, (l.weight ?? 1) / 6) * 0.3);
-            const opacity = !settled ? 0 : hoveredId ? (relevant ? Math.min(0.9, baseOpacity + 0.35) : 0.06) : baseOpacity;
+            // Directed (call-graph) edges skip the density-driven fade
+            // undirected graphs use to stay legible under many overlapping
+            // coupling lines -- call graphs have far fewer edges and a
+            // viewer is tracing specific paths, so a call_count of 1 (the
+            // common case) shouldn't render nearly invisible.
+            const baseOpacity = directed
+              ? Math.min(0.95, 0.55 + Math.min(1, (l.weight ?? 1) / 6) * 0.3)
+              : Math.min(0.55, 0.18 + Math.min(1, (l.weight ?? 1) / 6) * 0.3);
+            const opacity = !settled ? 0 : hoveredId ? (relevant ? Math.min(0.95, baseOpacity + 0.35) : 0.06) : baseOpacity;
+            const dash = edgeStyleForLink?.(l).dash;
             return (
               <path
                 key={i}
                 d={curvedPath(s.x, s.y, t.x, t.y, radiusById.get(s.id) ?? 0, radiusById.get(t.id) ?? 0, curveFactor)}
                 fill="none"
                 stroke={edgeColor}
-                strokeWidth={Math.max(1, Math.min(3.2, l.weight))}
+                strokeWidth={Math.max(directed ? 1.6 : 1, Math.min(3.2, l.weight))}
+                strokeDasharray={dash}
+                markerEnd={directed ? "url(#graph-arrowhead)" : undefined}
                 style={{ opacity, transition: "opacity 0.35s ease" }}
               />
             );

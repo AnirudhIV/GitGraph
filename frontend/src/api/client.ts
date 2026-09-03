@@ -5,9 +5,14 @@ import type {
   AuthorSummary,
   AuthorTopology,
   BlastRadius,
+  CallGraph,
   CollabPath,
+  FileCallGraph,
   FileDetail,
   FileSummary,
+  FunctionDetail,
+  FunctionListItem,
+  FunctionMap,
   Hotspot,
   ModuleCoupling,
   ModuleGraph,
@@ -113,6 +118,15 @@ export const api = {
       depth,
       min_count: minCount,
     }),
+  fileFunctions: (path: string) => request<FunctionListItem[]>(`/api/files/${encodePath(path)}/functions`),
+  fileCallGraph: (path: string) => request<FileCallGraph>(`/api/files/${encodePath(path)}/call-graph`),
+
+  function: (id: string) => request<FunctionDetail>(`/api/functions/${encodeURIComponent(id)}`),
+  functionCallGraph: (id: string, depth: 1 | 2 = 2) =>
+    request<CallGraph>(`/api/functions/${encodeURIComponent(id)}/call-graph`, { depth }),
+  functions: (search = "", sort: "callers" | "risk" = "callers", limit = 200) =>
+    request<FunctionListItem[]>("/api/functions", { search, sort, limit }),
+  functionMap: (topN = 60) => request<FunctionMap>("/api/functions/graph", { top_n: topN }),
 
   authors: (search = "", limit = 40) => request<AuthorSummary[]>("/api/authors", { search, limit }),
   authorCriticality: (limit = 20) => request<AuthorCriticality[]>("/api/authors/criticality", { limit }),
@@ -140,6 +154,10 @@ function encodePath(path: string): string {
 
 export function fileHref(path: string): string {
   return `/files/${encodePath(path)}`;
+}
+
+export function functionHref(id: string): string {
+  return `/functions/${encodeURIComponent(id)}`;
 }
 
 export function authorHref(email: string): string {

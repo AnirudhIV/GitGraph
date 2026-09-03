@@ -6,9 +6,11 @@ the "real seed data" source for the app -- no synthetic generation involved.
 """
 import os
 import posixpath
+import re
 import shutil
 import stat
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 RECORD_SEP = "\x1e"
@@ -301,6 +303,206 @@ def list_current_paths(repo_path: str, timeout: int = 60) -> set[str]:
     except subprocess.CalledProcessError as exc:
         raise GitOperationError(f"git ls-tree failed: {(exc.stderr or str(exc)).strip()}") from exc
     return {line for line in result.stdout.splitlines() if line}
+
+
+HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+# %x01 (git's own pretty-format escape for a literal byte), not a raw \x01
+# passed straight into argv -- git's format parser rejects a format string
+# that's nothing *but* a literal control byte ("invalid --pretty format"),
+# confirmed by hand before landing this; %x01 goes through the format
+# engine instead and works. %s (subject) rides along after the mark so
+# callers that need to classify a commit (see mine_function_change_history)
+# get its message for free, in the same single `git log -p` walk -- git
+# guarantees %s never itself contains a newline, so splitting each block on
+# the first "\n" cleanly separates the message from the patch that follows.
+_COMMIT_MARK_ARG = "--format=%x01%s"
+_COMMIT_MARK = "\x01"
+
+
+def _iter_file_commit_hunks(repo_path: str, path: str, timeout: int) -> Iterator[tuple[str, set[int]]]:
+    """Walk one file's non-merge commit history via a single `git log -p`
+    subprocess, yielding (commit message, touched new-side line numbers)
+    per commit that actually touched a line (a commit whose diff hunks are
+    all outside --unified=0's window, e.g. a pure rename with no content
+    change, is skipped).
+
+    Shared core behind mine_function_change_counts (churn only) and
+    mine_function_change_history (churn + bug-fix classification, see
+    Feature 3's scripts/validate_risk_score.py) -- factored out so the two
+    mining passes can never disagree about which lines/commits count as
+    "touching" a file, and so bug-fix classification doesn't need its own
+    second `git log` walk over the same history.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", repo_path, "log", "--no-merges", "-p", "--unified=0",
+                _COMMIT_MARK_ARG,
+                "--", path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        # One file's history failing to walk (e.g. a path git considers
+        # ambiguous) shouldn't lose every other file's change counts.
+        return
+
+    for commit_block in result.stdout.split(_COMMIT_MARK)[1:]:
+        message, _, patch = commit_block.partition("\n")
+        touched_lines: set[int] = set()
+        for m in HUNK_HEADER_RE.finditer(patch):
+            new_start = int(m.group(1))
+            new_count = int(m.group(2)) if m.group(2) is not None else 1
+            if new_count == 0:
+                # A pure deletion has no new-side lines of its own --
+                # attribute it to whatever now occupies that position.
+                touched_lines.add(new_start)
+            else:
+                touched_lines.update(range(new_start, new_start + new_count))
+        if touched_lines:
+            yield message, touched_lines
+
+
+def mine_function_change_counts(repo_path: str, functions: list[dict], timeout: int = 120) -> dict[str, int]:
+    """For every parsed function (each a dict with id/path/start_line/
+    end_line), count the distinct commits whose diff touched a line inside
+    that function's current range -- a real per-function churn signal, not
+    a file-level proxy (a busy file's quiet helper and its hot entry point
+    would otherwise look equally "risky", which defeats the point of
+    scoring at function granularity at all).
+
+    Known, accepted approximation (same category of gap as the rename-
+    lineage/second-hop notes elsewhere in this file): hunks are matched
+    against each function's *current* line range, not the range it
+    occupied at the time of that historical commit. As a file's line count
+    shifts over time, this can occasionally attribute a commit to the wrong
+    neighboring function. `git log -L` resolves this with real tracking
+    heuristics; this is a good-enough proxy for "how often has this area of
+    the file changed", not a certified per-function blame.
+
+    One `git log` per distinct file (scoped to that file's own path, so git
+    itself limits the walk to commits that touched it) rather than one per
+    function or one whole-repo diff dump -- bounded by how many files
+    actually have functions, not by function or commit count.
+    """
+    functions_by_path: dict[str, list[dict]] = {}
+    for fn in functions:
+        functions_by_path.setdefault(fn["path"], []).append(fn)
+
+    change_counts: dict[str, int] = {fn["id"]: 0 for fn in functions}
+
+    for path, fns in functions_by_path.items():
+        for _message, touched_lines in _iter_file_commit_hunks(repo_path, path, timeout):
+            for fn in fns:
+                if any(fn["start_line"] <= ln <= fn["end_line"] for ln in touched_lines):
+                    change_counts[fn["id"]] += 1
+
+    return change_counts
+
+
+# Bug-fix classification heuristic (Feature 3): a conventional-commit `fix:`/
+# `fix(scope):` prefix, the standalone words fix/fixes/fixed or bug, or an
+# issue reference (#123, and by extension "closes #123"/"fixes #123", which
+# already contain a bare #123). Deliberately approximate, not ground truth --
+# commit-message conventions vary a lot across projects and authors, so this
+# will both miss real fixes described in plain language ("handle empty
+# input") and flag some false positives ("fix typo in comment" on a doc-only
+# commit). scripts/validate_risk_score.py reports its correlation with that
+# caveat front and center rather than presenting bug_fix_count as exact.
+_FIX_WORD_RE = re.compile(r"\bfix(?:es|ed)?\b", re.IGNORECASE)
+_BUG_WORD_RE = re.compile(r"\bbug\b", re.IGNORECASE)
+_ISSUE_REF_RE = re.compile(r"#\d+")
+_CONVENTIONAL_FIX_RE = re.compile(r"^fix(?:\([^)]*\))?:", re.IGNORECASE)
+
+
+def _is_bug_fix_commit(message: str) -> bool:
+    return bool(
+        _FIX_WORD_RE.search(message)
+        or _BUG_WORD_RE.search(message)
+        or _ISSUE_REF_RE.search(message)
+        or _CONVENTIONAL_FIX_RE.search(message)
+    )
+
+
+def mine_function_change_history(repo_path: str, functions: list[dict], timeout: int = 120) -> dict[str, dict]:
+    """Per-function change_count *and* bug_fix_count (distinct bug-fix
+    commits -- see _is_bug_fix_commit -- that touched the function), for
+    Feature 3's validation of risk_score against real historical bugs.
+
+    Deliberately a sibling of mine_function_change_counts rather than a
+    change to its signature/return shape: change_count alone is what
+    seed/load.py persists on every ingest (via compute_risk_score), and
+    bug_fix_count is only ever needed by the standalone, manually-run
+    scripts/validate_risk_score.py -- paying the extra message-
+    classification cost (and changing the return shape every existing
+    caller depends on) on every ingest isn't worth it for a one-off
+    validation pass. Reuses the exact same _iter_file_commit_hunks walk, so
+    it agrees with mine_function_change_counts by construction rather than
+    by coincidence.
+    """
+    functions_by_path: dict[str, list[dict]] = {}
+    for fn in functions:
+        functions_by_path.setdefault(fn["path"], []).append(fn)
+
+    history: dict[str, dict] = {fn["id"]: {"change_count": 0, "bug_fix_count": 0} for fn in functions}
+
+    for path, fns in functions_by_path.items():
+        for message, touched_lines in _iter_file_commit_hunks(repo_path, path, timeout):
+            is_bug_fix = _is_bug_fix_commit(message)
+            for fn in fns:
+                if any(fn["start_line"] <= ln <= fn["end_line"] for ln in touched_lines):
+                    history[fn["id"]]["change_count"] += 1
+                    if is_bug_fix:
+                        history[fn["id"]]["bug_fix_count"] += 1
+
+    return history
+
+
+# Matches the "+++ b/<path>" header unified diff emits immediately before
+# that file's own hunks (and "+++ /dev/null" for a deleted file, which has
+# no new-side lines to attribute anything to).
+_DIFF_NEW_FILE_HEADER_RE = re.compile(r"^\+\+\+ b/(.+)$")
+
+
+def parse_diff_hunks(diff_text: str) -> dict[str, set[int]]:
+    """Map each file touched in a multi-file unified diff (e.g. `git diff
+    <base>...HEAD --unified=0`) to the set of new-side line numbers its
+    hunks touch -- Feature 4's PR risk-check needs this same "which lines
+    changed" signal mine_function_change_counts computes per-commit, just
+    applied once across a whole PR diff instead of once per historical
+    commit, so this reuses HUNK_HEADER_RE (the same hunk-header regex)
+    rather than re-deriving it.
+
+    A single left-to-right scan is sufficient (no need for a real diff
+    parser): git always emits a file's "+++ b/<path>" header immediately
+    before that file's own hunks, so attributing each hunk to the most
+    recently seen path is unambiguous.
+    """
+    result: dict[str, set[int]] = {}
+    current_path: str | None = None
+    for line in diff_text.splitlines():
+        if line == "+++ /dev/null":
+            current_path = None  # deleted file -- nothing to attribute new-side lines to
+            continue
+        file_match = _DIFF_NEW_FILE_HEADER_RE.match(line)
+        if file_match:
+            current_path = file_match.group(1)
+            result.setdefault(current_path, set())
+            continue
+        hunk_match = HUNK_HEADER_RE.match(line)
+        if hunk_match and current_path is not None:
+            new_start = int(hunk_match.group(1))
+            new_count = int(hunk_match.group(2)) if hunk_match.group(2) is not None else 1
+            if new_count == 0:
+                result[current_path].add(new_start)
+            else:
+                result[current_path].update(range(new_start, new_start + new_count))
+    return result
 
 
 def to_load_records(commits: list[Commit], module_depth: int = 1) -> list[dict]:

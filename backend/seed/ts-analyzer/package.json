@@ -1,0 +1,12 @@
+{
+  "name": "gitgraph-ts-analyzer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Standalone Node helper invoked as a subprocess from backend/seed/parse/ts_parser.py -- extracts function definitions, call sites, and import statements from a target repo's TS/JS files using the real TypeScript checker (via ts-morph), for GitGraph's function-level dependency graph. Not part of the frontend/ Vite build.",
+  "type": "commonjs",
+  "main": "extract.js",
+  "dependencies": {
+    "ts-morph": "^24.0.0",
+    "typescript": "^5.6.3"
+  }
+}

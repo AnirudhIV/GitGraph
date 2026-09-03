@@ -5,6 +5,7 @@ const LINKS = [
   { to: "/dashboard", label: "Dashboard", end: true },
   { to: "/repo-map", label: "Repo Map" },
   { to: "/files", label: "Files" },
+  { to: "/functions", label: "Functions" },
   { to: "/authors", label: "Authors" },
   { to: "/criticality", label: "Criticality" },
   { to: "/modules", label: "Modules" },

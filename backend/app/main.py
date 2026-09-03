@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app import db, ratelimit
 from app.config import get_settings
-from app.routers import authors, files, modules, repo, search
+from app.routers import authors, files, functions, modules, repo, search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
@@ -74,6 +74,14 @@ def health():
 
 
 app.include_router(repo.router, prefix="/api", tags=["repo"])
+# functions.router's /files/{path:path}/functions and /call-graph routes
+# must be registered before files.router: FastAPI/Starlette match routes
+# in overall registration order across the whole app, and files.router's
+# own catch-all GET /files/{path:path} (needed for the plain file-detail
+# page) is greedy enough to swallow those paths too if it were matched
+# first -- the same hazard files.py's own blast-radius route comment
+# describes, just across routers instead of within one.
+app.include_router(functions.router, prefix="/api", tags=["functions"])
 app.include_router(files.router, prefix="/api", tags=["files"])
 app.include_router(authors.router, prefix="/api", tags=["authors"])
 app.include_router(modules.router, prefix="/api", tags=["modules"])

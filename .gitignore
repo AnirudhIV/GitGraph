@@ -12,6 +12,7 @@ backend/__pycache__/
 # Node
 frontend/node_modules/
 frontend/dist/
+backend/seed/ts-analyzer/node_modules/
 
 # OS
 .DS_Store
@@ -23,6 +24,15 @@ Thumbs.db
 
 # Seed script scratch clones
 backend/.repo-cache/
+
+# Zero-setup CLI's local SQLite export (backend/cli) -- can land in any
+# repo `python -m cli ingest` is pointed at, including this one.
+.gitgraph/
+
+# pip build metadata from `pip install -e backend/` (backend/pyproject.toml)
+backend/*.egg-info/
+backend/build/
+backend/dist/
 
 # Third-party Claude Code skills installed via `npx skills add` -- personal
 # tooling, not project code.

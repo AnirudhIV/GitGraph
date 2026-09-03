@@ -42,6 +42,12 @@ const QUESTIONS = [
     to: "/authors",
     cta: "See who's at risk",
   },
+  {
+    q: "What would break if I changed this function?",
+    a: "A real call graph, parsed from the actual source — not git history. Every caller and callee, each edge marked with how confidently it was resolved.",
+    to: "/functions",
+    cta: "Explore the call graph",
+  },
 ];
 
 // Fixed sample data, not a tracked repo's real blast radius -- using a live
@@ -79,6 +85,36 @@ const PREVIEW_EDGES: GraphEdge[] = [
   { source: "h1c", target: "h2e", weight: 2 },
 ];
 
+// Same "fixed sample, real component" idiom as PREVIEW_NODES/EDGES above --
+// this one shows the *other* graph: parsed from source, not git history, so
+// it needs its own directed sample rather than reusing the file-coupling
+// one. One low-confidence edge included on purpose, so the dashed styling
+// (a best-effort name match, not a same-file/type-checked resolution) is
+// visible on the landing page, not just discovered later inside the app.
+const PREVIEW_FN_NODES_BASE: Omit<GraphNode, "sole_owned" | "trending_worse">[] = [
+  { id: "fn-root", kind: "Function", label: "chargeCard", subtitle: "payments/charge.ts - chargeCard", hop: 0, weight: 2, group: "" },
+  { id: "fn-c1", kind: "Function", label: "submit", subtitle: "checkout/flow.ts - CheckoutFlow.submit", hop: 1, weight: 1, group: "" },
+  { id: "fn-c2", kind: "Function", label: "process", subtitle: "queue/retry.ts - RetryQueue.process", hop: 1, weight: 1, group: "" },
+  { id: "fn-e1", kind: "Function", label: "validateCard", subtitle: "payments/validate.ts - validateCard", hop: 1, weight: 1, group: "" },
+  { id: "fn-e2", kind: "Function", label: "send", subtitle: "payments/gateway.ts - Gateway.send", hop: 1, weight: 2, group: "" },
+  { id: "fn-e3", kind: "Function", label: "logTransaction", subtitle: "ledger/log.ts - logTransaction", hop: 1, weight: 1, group: "" },
+  { id: "fn-h2a", kind: "Function", label: "onCharge", subtitle: "webhooks/handlers.ts - onCharge", hop: 2, weight: 1, group: "" },
+];
+const PREVIEW_FN_NODES: GraphNode[] = PREVIEW_FN_NODES_BASE.map((n) => ({ ...n, sole_owned: false, trending_worse: false }));
+
+const PREVIEW_FN_EDGES: GraphEdge[] = [
+  { source: "fn-c1", target: "fn-root", weight: 5, confidence: "high" },
+  { source: "fn-c2", target: "fn-root", weight: 2, confidence: "high" },
+  { source: "fn-root", target: "fn-e1", weight: 4, confidence: "high" },
+  { source: "fn-root", target: "fn-e2", weight: 6, confidence: "high" },
+  { source: "fn-root", target: "fn-e3", weight: 1, confidence: "low" },
+  { source: "fn-e2", target: "fn-h2a", weight: 2, confidence: "high" },
+];
+
+function fnEdgeStyle(e: { confidence?: string }): { dash?: string } {
+  return { dash: e.confidence === "low" ? "4 3" : undefined };
+}
+
 const ENGINEERING_NOTES = [
   {
     title: "Identity, not aliases",
@@ -96,6 +132,10 @@ const ENGINEERING_NOTES = [
     title: "Safe to point at the internet",
     body: "Ingest is rate-limited per IP with a global cooldown between clones, so a public instance can't be turned into a repo-cloning denial-of-service vector.",
   },
+  {
+    title: "Confidence, not certainty",
+    body: "Every call-graph edge is tagged with how it was resolved — same-file, type-checked, import-resolved, or a best-effort name match. An uncertain guess is shown as uncertain, never quietly presented as fact.",
+  },
 ];
 
 const NODES = [
@@ -106,6 +146,18 @@ const NODES = [
 ];
 
 const RELS = ["AUTHORED", "MODIFIED", "BELONGS_TO"];
+
+// A second, separate schema -- parsed from source at ingest time, not
+// derived from commits. Kept as its own graph rather than merged into
+// NODES/RELS above: a statistical signal (files that change together) and
+// a structural one (functions that call each other) answer different
+// questions, and blurring them into one schema would make neither honest.
+const FN_NODES = [
+  { label: "File", cat: "--cat-3" },
+  { label: "Function", cat: "--cat-1" },
+];
+
+const FN_RELS = ["DEFINED_IN", "CALLS", "IMPORTS"];
 
 export function Home() {
   const stats = useApi(useCallback(() => api.stats(), []));
@@ -159,7 +211,7 @@ export function Home() {
             marginBottom: 16,
           }}
         >
-          Git history, modeled as a graph
+          Git history and code structure, modeled as a graph
         </div>
         <h1
           style={{
@@ -183,7 +235,9 @@ export function Home() {
         >
           Point GitGraph at any public repository. It clones it, mines every commit with{" "}
           <code>git log --numstat</code>, and loads authors, files and modules into a graph you can traverse — coupling,
-          hotspots and ownership a file tree can't show you.
+          hotspots and ownership a file tree can't show you. Then it goes one level deeper: parsing the actual source
+          to build a real function-level call graph, so you can see not just which files change together, but which
+          functions actually depend on each other.
         </p>
         <div style={{ display: "flex", gap: 16, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
           <Link
@@ -270,56 +324,47 @@ export function Home() {
             margin: "0 0 28px",
           }}
         >
-          Four node types, three relationships — that's the whole schema
+          A function level dependency graph, parsed straight from the code
         </h2>
-        <div
-          className="card card-pad"
+        <GraphView
+          nodes={PREVIEW_FN_NODES}
+          edges={PREVIEW_FN_EDGES}
+          navigable={false}
+          height={480}
+          directed
+          edgeStyleForLink={fnEdgeStyle}
+        />
+        <p style={{ textAlign: "center", fontSize: 12.5, color: "var(--text-muted)", margin: "14px auto 0", maxWidth: "56ch" }}>
+          Not git history — real static analysis, using the actual TypeScript compiler and Python's own parser.
+          Arrows show which function calls which; the dashed edge is a best-effort name match rather than a
+          verified resolution, shown as uncertain instead of pretending every guess is a fact. This is sample data;
+          the real thing is built from your repo's actual functions.
+        </p>
+      </section>
+
+      <section style={{ maxWidth: 1040, margin: "96px auto 0", padding: "0 24px" }}>
+        <h2
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            gap: 4,
-            padding: "28px 20px",
+            textAlign: "center",
+            fontSize: 12.5,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color: "var(--text-muted)",
+            margin: "0 0 28px",
           }}
         >
-          {NODES.map((node, i) => (
-            <div key={node.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  padding: "7px 14px",
-                  borderRadius: 999,
-                  border: `1px solid var(${node.cat})`,
-                  color: `var(${node.cat})`,
-                  background: `color-mix(in srgb, var(${node.cat}) 10%, transparent)`,
-                }}
-              >
-                {node.label}
-              </span>
-              {i < RELS.length && (
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 10.5,
-                    color: "var(--text-muted)",
-                    padding: "0 8px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  — {RELS[i]} →
-                </span>
-              )}
-            </div>
-          ))}
+          Two graphs, kept deliberately separate
+        </h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <SchemaRow eyebrow="From git history" nodes={NODES} rels={RELS} />
+          <SchemaRow eyebrow="From parsing the source" nodes={FN_NODES} rels={FN_RELS} />
         </div>
         <p style={{ textAlign: "center", fontSize: 12.5, color: "var(--text-muted)", margin: "16px auto 0", maxWidth: "60ch" }}>
-          Deliberately minimal — all of it derivable from <code>git log --numstat</code>, no synthetic data. The
-          richness comes from traversal, not the schema.
+          One is a statistical signal — files that tend to change together, derived from <code>git log --numstat</code>.
+          The other is structural — functions that actually call each other, derived from parsing the code itself.
+          Deliberately never merged into one graph: they answer different questions, and blurring them would make
+          neither honest.
         </p>
       </section>
 
@@ -389,6 +434,49 @@ function MiniStat({ label, value }: { label: string; value: number }) {
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
         {label}
+      </div>
+    </div>
+  );
+}
+
+function SchemaRow({ eyebrow, nodes, rels }: { eyebrow: string; nodes: { label: string; cat: string }[]; rels: string[] }) {
+  return (
+    <div className="card card-pad" style={{ padding: "22px 20px" }}>
+      <div
+        className="mono"
+        style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}
+      >
+        {eyebrow}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 4 }}>
+        {nodes.map((node, i) => (
+          <div key={node.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "7px 14px",
+                borderRadius: 999,
+                border: `1px solid var(${node.cat})`,
+                color: `var(${node.cat})`,
+                background: `color-mix(in srgb, var(${node.cat}) 10%, transparent)`,
+              }}
+            >
+              {node.label}
+            </span>
+            {i < rels.length && (
+              <span
+                className="mono"
+                style={{ fontSize: 10.5, color: "var(--text-muted)", padding: "0 8px", whiteSpace: "nowrap" }}
+              >
+                — {rels[i]} →
+              </span>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

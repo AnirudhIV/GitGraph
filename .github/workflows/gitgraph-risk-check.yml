@@ -1,0 +1,31 @@
+# This repo's own use of ../action.yml -- doubles as a self-test (this
+# workflow runs against every PR to this repo) and as the copy-pasteable
+# example for another repo wanting the same check: swap `uses: ./` for
+# `uses: <owner>/<repo>@<tag>` once this repo is published and tagged.
+#
+# See action.yml for what this actually does, its configurable inputs
+# (risk-percentile, min-callers, max-commits), and why a comment is the
+# rare outcome, not the common one.
+name: GitGraph risk check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  risk-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./
+        with:
+          risk-percentile: ${{ vars.GITGRAPH_RISK_PERCENTILE || '90' }}
+          min-callers: ${{ vars.GITGRAPH_MIN_CALLERS || '5' }}
+          max-commits: ${{ vars.GITGRAPH_MAX_COMMITS || '2000' }}

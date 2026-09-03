@@ -182,6 +182,35 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Zero-setup CLI
+
+The dashboard above needs CognoDB and a running FastAPI server. For a
+single repo and no server, there's a separate, offline-only path: a CLI
+backed by a local SQLite file, with zero third-party Python dependencies.
+
+```bash
+pipx install gitgraph-cli    # or: uvx gitgraph-cli ingest .
+cd your-repo
+gitgraph ingest .            # writes .gitgraph/graph.db
+gitgraph search parse_request
+gitgraph risk src/app.py
+gitgraph blast-radius <function-id> --depth 2
+```
+
+Every subcommand after `ingest` is read-only, offline, and prints JSON --
+built for scripting and for AI coding agents to shell out to, as much as
+for a human. See [`backend/CLI_README.md`](backend/CLI_README.md) for the
+full command reference, and [`backend/cli/`](backend/cli/) for the source
+-- it reuses the exact same mining/parsing code as the dashboard's ingest
+pipeline (`seed/mine_git.py`, `seed/parse/`), just writing to SQLite
+instead of CognoDB.
+
+There's also a GitHub Action
+([`.github/workflows/gitgraph-risk-check.yml`](.github/workflows/gitgraph-risk-check.yml))
+that runs this CLI against a PR's diff and comments only when the PR
+touches a function in the repo's own top-risk percentile — see that
+workflow file's header comment for the configurable thresholds.
+
 ## The main queries, explained
 
 All queries live in [`backend/app/queries.py`](backend/app/queries.py) and are
@@ -345,5 +374,5 @@ care about) often gives you a cheaper equivalent.
   build` outputs `frontend/dist`. Set `VITE_API_URL` to the deployed backend
   URL.
 
-Hosted demo: *TODO — add link after deploying*
+Hosted demo: [wexa-ai-chi.vercel.app](https://wexa-ai-chi.vercel.app/)
 Screen recording: *TODO*

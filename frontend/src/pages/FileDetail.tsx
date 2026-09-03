@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, fileHref } from "../api/client";
+import { api, fileHref, functionHref } from "../api/client";
 import { BarList } from "../components/BarList";
 import { CommitList } from "../components/CommitList";
 import { GraphView } from "../components/GraphView";
@@ -10,6 +10,14 @@ import { StatTile } from "../components/StatTile";
 import { useApi } from "../hooks/useApi";
 import { riskColorVar, riskTier } from "../lib/riskColor";
 
+// Same idiom RepoMap.tsx uses for confidence-independent graphs elsewhere:
+// a low-confidence (best-effort name match, not a type-checked/same-file
+// resolution) call edge is dashed rather than solid, so a viewer can tell
+// "this edge is a guess" apart from "this edge is certain" at a glance.
+function edgeStyleForLink(e: { confidence?: string }): { dash?: string } {
+  return { dash: e.confidence === "low" ? "4 3" : undefined };
+}
+
 export function FileDetail() {
   const params = useParams();
   const path = params["*"] ?? "";
@@ -17,6 +25,8 @@ export function FileDetail() {
 
   const detail = useApi(useCallback(() => api.file(path), [path]));
   const blast = useApi(useCallback(() => api.blastRadius(path, depth, 1), [path, depth]));
+  const functions = useApi(useCallback(() => api.fileFunctions(path), [path]));
+  const callGraph = useApi(useCallback(() => api.fileCallGraph(path), [path]));
   // riskTier() grades relative to the max score in a list (see lib/riskColor.ts),
   // and there's no natural "list" on a single-file page -- top-1 hotspot gives
   // the repo's current max so this file's severity still reads the same way
@@ -114,6 +124,39 @@ export function FileDetail() {
               <GraphView nodes={blast.data.nodes} edges={blast.data.edges} />
             )}
           </div>
+
+          {functions.data && functions.data.length > 0 && (
+            <div className="card card-pad">
+              <h2 className="section-title">Functions in this file</h2>
+              <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "4px 0 14px" }}>
+                Parsed from source, not git history -- ranked by importance (how many places call it), not reading
+                order. Dashed graph lines are best-effort name matches (low confidence); solid lines are resolved
+                via same-file or real type-checked/import analysis.
+              </p>
+              <BarList
+                items={functions.data.map((f) => ({
+                  key: f.id,
+                  label: f.qualname,
+                  sublabel: `L${f.start_line} · ${f.language}${f.is_exported ? " · exported" : ""}`,
+                  value: f.caller_count,
+                  href: functionHref(f.id),
+                  displayValue: `${f.caller_count} callers`,
+                }))}
+              />
+              {callGraph.data && callGraph.data.nodes.length > 1 && (
+                <div style={{ marginTop: 14 }}>
+                  <GraphView
+                    nodes={callGraph.data.nodes}
+                    edges={callGraph.data.edges}
+                    height={360}
+                    hrefForNode={(n) => functionHref(n.id)}
+                    edgeStyleForLink={edgeStyleForLink}
+                    directed
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-2">
             <div className="card card-pad">

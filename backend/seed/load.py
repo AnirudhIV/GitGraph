@@ -30,9 +30,11 @@ from seed.mine_git import (  # noqa: E402
     distinct_files,
     list_current_paths,
     mine_commits,
+    mine_function_change_counts,
     rename_pairs,
     to_load_records,
 )
+from seed.parse import ParseOperationError, caller_counts, compute_risk_score, parse_repo  # noqa: E402
 
 BATCH_SIZE = 250
 
@@ -81,6 +83,58 @@ def load_commits(records: list[dict]) -> None:
     for i in range(0, total, BATCH_SIZE):
         batch = records[i : i + BATCH_SIZE]
         db.run_write(queries.LOAD_COMMIT_BATCH, {"commits": batch})
+        print(f"  {min(i + BATCH_SIZE, total)}/{total}")
+
+
+def wipe_functions() -> None:
+    """Scoped wipe of just the Function/CALLS/IMPORTS subgraph -- run
+    unconditionally at the start of every ingest, independent of the
+    top-level --clear flag. Unlike the git-history side (append-only across
+    reruns), parsing always re-derives the *current* function/call graph
+    from source, so a stale wipe-then-write is the correct rerun model
+    here regardless of whether the caller asked to --clear everything
+    else."""
+    total = 0
+    while True:
+        rows = db.run_write(queries.WIPE_FUNCTIONS_BATCH, {"batch_size": 5000})
+        deleted = rows[0]["deleted"] if rows else 0
+        total += deleted
+        if deleted == 0:
+            break
+    if total:
+        print(f"  cleared {total} existing function-graph nodes.")
+
+
+def load_functions(functions: list[dict]) -> None:
+    if not functions:
+        return
+    total = len(functions)
+    print(f"Loading {total} functions in batches of {BATCH_SIZE}...")
+    for i in range(0, total, BATCH_SIZE):
+        batch = functions[i : i + BATCH_SIZE]
+        db.run_write(queries.LOAD_FUNCTIONS_BATCH, {"functions": batch})
+        print(f"  {min(i + BATCH_SIZE, total)}/{total}")
+
+
+def load_calls(calls: list[dict]) -> None:
+    if not calls:
+        return
+    total = len(calls)
+    print(f"Loading {total} call edges in batches of {BATCH_SIZE}...")
+    for i in range(0, total, BATCH_SIZE):
+        batch = calls[i : i + BATCH_SIZE]
+        db.run_write(queries.LOAD_CALLS_BATCH, {"calls": batch})
+        print(f"  {min(i + BATCH_SIZE, total)}/{total}")
+
+
+def load_imports(imports: list[dict]) -> None:
+    if not imports:
+        return
+    total = len(imports)
+    print(f"Loading {total} import edges in batches of {BATCH_SIZE}...")
+    for i in range(0, total, BATCH_SIZE):
+        batch = imports[i : i + BATCH_SIZE]
+        db.run_write(queries.LOAD_IMPORTS_BATCH, {"imports": batch})
         print(f"  {min(i + BATCH_SIZE, total)}/{total}")
 
 
@@ -247,6 +301,37 @@ def run_ingest(
     report(f"Loading {len(records)} commits...")
     load_commits(records)
     mark_deleted(working_path, {f["path"] for f in files}, progress=report)
+
+    report("Parsing functions and call graph ...")
+    try:
+        parsed = parse_repo(working_path, [f["path"] for f in files])
+        for warning in parsed.warnings:
+            report(f"Warning: {warning}")
+
+        report("Mining per-function change history ...")
+        change_counts = mine_function_change_counts(working_path, parsed.functions)
+        callers_by_id = caller_counts(parsed.calls)
+        for fn in parsed.functions:
+            change_count = change_counts.get(fn["id"], 0)
+            caller_count = callers_by_id.get(fn["id"], 0)
+            fn["change_count"] = change_count
+            fn["risk_score"] = compute_risk_score(change_count, caller_count, fn["complexity"])
+
+        wipe_functions()
+        load_functions(parsed.functions)
+        load_calls(parsed.calls)
+        load_imports(parsed.imports)
+        report(
+            f"Parsed {len(parsed.functions)} functions, {len(parsed.calls)} call edges, "
+            f"{len(parsed.imports)} import edges."
+        )
+    except ParseOperationError as exc:
+        # Never abort ingestion over this -- the git-mined repo map, authors,
+        # and hotspots are already fully loaded by this point, and every
+        # existing endpoint must keep working with zero knowledge that
+        # function parsing exists or failed. See seed/parse/__init__.py.
+        report(f"Warning: function/call graph parsing failed ({exc}); repo map and git-history data are unaffected.")
+
     report("Precomputing hotspot risk scores...")
     precompute_hotspots()
     report("Precomputing author stats...")

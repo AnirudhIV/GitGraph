@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gitgraph-cli"
+version = "0.1.0"
+description = "Zero-setup, offline function-level risk analysis for git repos -- local SQLite export, no server, no database, no credentials."
+readme = "CLI_README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+# Deliberately zero third-party dependencies: cli/ and seed/ (the packages
+# this distribution ships -- see [tool.setuptools] below) only ever import
+# the stdlib. `git` itself, and Node.js for TS/JS parsing, are external
+# system binaries this tool shells out to (see seed/mine_git.py, seed/
+# parse/ts_parser.py) -- neither is installable as a pip dependency, and
+# Python-only repos work with git alone.
+dependencies = []
+
+[project.scripts]
+gitgraph = "cli.__main__:main"
+
+# The FastAPI dashboard (app/) and its CognoDB/pydantic/fastapi dependencies
+# (backend/requirements.txt) are a separate, optional concern from this
+# distribution on purpose -- see the project README's "Zero-setup CLI"
+# section. `pip install gitgraph-cli` (or `pipx install`/`uvx`) gets you
+# only the CLI and its zero-dependency mining/parsing core, never the
+# dashboard's heavier stack.
+[tool.setuptools]
+packages = ["cli", "seed", "seed.parse"]
+
+[tool.setuptools.package-data]
+# extract.js + its package.json/package-lock.json ship so `gitgraph ingest`
+# can point a user at exactly what to `npm install` for TS/JS support --
+# node_modules itself is deliberately excluded (large, platform-specific
+# binaries with no place in a Python wheel); Python-only repos need no
+# Node.js at all, and TS/JS parsing degrades to a warning, not a failure,
+# when it's missing (see seed/parse/ts_parser.py::parse).
+seed = ["ts-analyzer/extract.js", "ts-analyzer/package.json", "ts-analyzer/package-lock.json"]

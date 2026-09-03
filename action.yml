@@ -1,0 +1,97 @@
+name: "GitGraph risk check"
+description: >-
+  Flags functions a pull request touches that are high-risk by GitGraph's
+  function-level risk_score (change frequency x caller fan-in x cyclomatic
+  complexity) or by caller fan-in alone, and posts one PR comment listing
+  them. Posts nothing when no touched function crosses the threshold --
+  silence is the expected, common outcome, not a failure.
+author: "GitGraph"
+branding:
+  icon: "alert-triangle"
+  color: "orange"
+
+# The calling workflow must grant these itself (permissions can't be set
+# from inside a composite action) -- see the usage example below and
+# .github/workflows/gitgraph-risk-check.yml in this repo, which uses this
+# action against itself as both an example and a self-test.
+#
+# permissions:
+#   contents: read
+#   pull-requests: write
+#
+# Usage in another repo:
+#
+#   - uses: actions/checkout@v4
+#     with:
+#       fetch-depth: 0
+#   - uses: <owner>/<repo>@v1
+#     with:
+#       risk-percentile: "90"
+#       min-callers: "5"
+
+inputs:
+  risk-percentile:
+    description: >-
+      Top N% of the repo's scored (risk_score > 0) functions to flag. What
+      counts as "high risk" varies with repo size, so there's no universal
+      default that's right for every repo -- tune this per-repo.
+    required: false
+    default: "90"
+  min-callers:
+    description: "Flag a touched function regardless of risk_score once its caller_count reaches this many distinct callers."
+    required: false
+    default: "5"
+  max-commits:
+    description: >-
+      Commit depth for the mining pass this action runs to compute current
+      risk_score/change_count/caller_count. Bounds CI time on a large repo;
+      raise it if this action is flagging too little on a long-lived one
+      (deeper history gives change_count more signal to work with).
+    required: false
+    default: "2000"
+  python-version:
+    description: "Python version to run GitGraph's CLI under."
+    required: false
+    default: "3.12"
+
+runs:
+  using: "composite"
+  steps:
+    # actions/checkout only guarantees the ref it was told to check out (the
+    # PR's merge commit) is present locally -- origin/<base> isn't fetched
+    # by default, but this action diffs against it.
+    - name: Fetch base branch
+      shell: bash
+      run: git fetch origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install GitGraph CLI
+      shell: bash
+      run: pip install "${{ github.action_path }}/backend"
+
+    - name: Ingest current tree
+      shell: bash
+      run: gitgraph ingest "$GITHUB_WORKSPACE" --max-commits "${{ inputs.max-commits }}"
+
+    - name: Find touched high-risk functions
+      shell: bash
+      run: |
+        python "${{ github.action_path }}/backend/scripts/pr_risk_check.py" \
+          --db "$GITHUB_WORKSPACE/.gitgraph/graph.db" \
+          --base "origin/${{ github.base_ref }}" \
+          --percentile "${{ inputs.risk-percentile }}" \
+          --min-callers "${{ inputs.min-callers }}" \
+          --out "$GITHUB_WORKSPACE/risk-comment.md"
+
+    # No file means nothing crossed the threshold -- the common case, not
+    # an error, so this step (and therefore the comment) is simply skipped.
+    - name: Post PR comment
+      if: hashFiles('risk-comment.md') != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh pr comment "${{ github.event.pull_request.number }}" --body-file "$GITHUB_WORKSPACE/risk-comment.md"
